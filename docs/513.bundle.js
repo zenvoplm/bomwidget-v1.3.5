@@ -907,8 +907,26 @@
                 },
                 defaultQueryParams: Q
             };
-            var __bomThumbUrl = function() {
-                    return "/cvservlet/fetch/v2?output_format=cvjson&xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
+            console.log("[BOMWidget] 513 build v1.3.6 (thumb3)");
+            var __bomThumbCall = function(chunk) {
+                    var t = m.getCurrentTenant(),
+                        base = m.getUrlForTenantAndService(t, "3DSpace");
+                    if (!base) return Promise.reject(new Error("No 3DSpace url for tenant " + t));
+                    var ctx = L ? "ctx::" + L : "",
+                        url = base + "/cvservlet/fetch/v2?output_format=cvjson&xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(t) + (ctx ? "&SecurityContext=" + ctx : ""),
+                        headers = {
+                            "Content-Type": "application/json"
+                        };
+                    return ctx && (headers.SecurityContext = ctx), E && (headers.ENO_CSRF_TOKEN = E), m.callWebService({
+                        method: "POST",
+                        url: url,
+                        headers: headers,
+                        data: __bomThumbBody(chunk),
+                        type: "json"
+                    }).then(function(r) {
+                        if (r && r.body && r.body.error) throw new Error(r.body.error);
+                        return r && r.body
+                    })
                 },
                 __bomThumbBody = function(e) {
                     return {
@@ -2611,15 +2629,7 @@
                             if (!e.length) return Promise.resolve(n);
                             for (var t = [], r = 0; r < e.length; r += 50) t.push(e.slice(r, r + 50));
                             return __thumbPool(t, 2, function(t2) {
-                                return _.call3DSpace({
-                                    url: __bomThumbUrl(),
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json"
-                                    },
-                                    data: __bomThumbBody(t2),
-                                    type: "json"
-                                }).then(function(r2) {
+                                return __bomThumbCall(t2).then(function(r2) {
                                     (r2 && r2.results || []).forEach(function(e3) {
                                         var n3 = "",
                                             t3 = "";
@@ -2657,7 +2667,7 @@
                                     for (var o2 = 0; o2 < r2.length && !a2; o2++) {
                                         var l2 = r2[o2];
                                         if (l2) {
-                                            var i2 = l2.engItem || l2.EngItem || l2.engineeringItem || {},
+                                                                        var i2 = l2.ScopeEngItem || l2.PartialScopeEngItem || l2.engItem || l2.EngItem || l2.engineeringItem || {},
                                                 c2 = [i2.identifier, i2.id, l2.engItemId, l2.identifier, l2.target, l2.targetId];
                                             i2.relativePath && c2.push(String(i2.relativePath).split("/").pop()), l2.relativePath && c2.push(String(l2.relativePath).split("/").pop());
                                             for (var u2 = 0; u2 < c2.length; u2++) {
@@ -5608,7 +5618,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.3.4"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.3.6"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
