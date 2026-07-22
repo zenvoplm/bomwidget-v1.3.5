@@ -907,22 +907,50 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.3.6 (thumb3)");
-            var __bomThumbCall = function(chunk) {
+            console.log("[BOMWidget] 513 build v1.3.6 (thumb4)");
+            var __bomUser = "",
+                __bomUserGet = function() {
+                    if (__bomUser) return Promise.resolve(__bomUser);
+                    try {
+                        var e = m.getCurrentTenant(),
+                            n = P.getSecurityContextForTenant(e) || {},
+                            t = n.name || n.user || n.login || n.id;
+                        if (t && "string" == typeof t) return __bomUser = t, Promise.resolve(t)
+                    } catch (r) {}
+                    var a = m.getCurrentTenant();
+                    return m.callWebService({
+                        method: "GET",
+                        url: m.getUrlForTenantAndService(a, "3DSpace") + "/resources/modeler/pno/person?current=true&select=name&tenant=" + a,
+                        headers: {
+                            Accept: "application/json"
+                        },
+                        type: "json"
+                    }).then(function(e2) {
+                        var n2 = e2 && e2.body || {};
+                        return __bomUser = n2.name || n2.user || n2.login || n2.id || ""
+                    }).catch(function() {
+                        return ""
+                    })
+                },
+                __bomThumbCall = function(chunk) {
                     var t = m.getCurrentTenant(),
                         base = m.getUrlForTenantAndService(t, "3DSpace");
                     if (!base) return Promise.reject(new Error("No 3DSpace url for tenant " + t));
-                    var ctx = L ? "ctx::" + L : "",
-                        url = base + "/cvservlet/fetch/v2?output_format=cvjson&xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(t) + (ctx ? "&SecurityContext=" + ctx : ""),
-                        headers = {
-                            "Content-Type": "application/json"
-                        };
-                    return ctx && (headers.SecurityContext = ctx), E && (headers.ENO_CSRF_TOKEN = E), m.callWebService({
-                        method: "POST",
-                        url: url,
-                        headers: headers,
-                        data: __bomThumbBody(chunk),
-                        type: "json"
+                    return __bomUserGet().then(function(user) {
+                        var ctx = "ctx::" + L,
+                            headers = {
+                                Accept: "application/json",
+                                "Content-Type": "application/json",
+                                SecurityContext: encodeURIComponent(ctx),
+                                SecurityToken: encodeURIComponent((user || "") + "|" + ctx + "|preferred")
+                            };
+                        return m.callWebService({
+                            method: "POST",
+                            url: base + "/cvservlet/fetch/v2?tenant=" + encodeURIComponent(t) + "&SecurityContext=" + ctx + "&xrequestedwith=xmlhttprequest",
+                            headers: headers,
+                            data: __bomThumbBody(chunk),
+                            type: "json"
+                        })
                     }).then(function(r) {
                         if (r && r.body && r.body.error) throw new Error(r.body.error);
                         return r && r.body
