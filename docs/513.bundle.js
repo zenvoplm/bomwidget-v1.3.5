@@ -908,11 +908,7 @@
                 defaultQueryParams: Q
             };
             var __bomThumbUrl = function() {
-                    var e = "";
-                    try {
-                        e = L ? "&SecurityContext=" + encodeURIComponent("ctx::" + L) : ""
-                    } catch (n) {}
-                    return "/cvservlet/fetch/v2?output_format=cvjson&xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant) + e
+                    return "/cvservlet/fetch/v2?output_format=cvjson&xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
                 __bomThumbBody = function(e) {
                     return {
@@ -2586,6 +2582,9 @@
                     });
                     var Th = (0, c.KR)({}),
                         __thumbBusy = !1,
+                        __scopeCache = {},
+                        __engThumbs = {},
+                        __scopeLogged = !1,
                         __collectThumbPids = function() {
                             var e = [],
                                 n = {},
@@ -2596,48 +2595,116 @@
                                 };
                             return t(s.value), e
                         },
+                        __thumbPool = function(e, n, t) {
+                            var r = 0,
+                                o = function() {
+                                    if (r >= e.length) return Promise.resolve();
+                                    var l2 = e[r++];
+                                    return t(l2).then(o)
+                                },
+                                i2 = [];
+                            for (var c2 = 0; c2 < Math.min(n, e.length); c2++) i2.push(o());
+                            return Promise.all(i2)
+                        },
+                        __fetchThumbBatch = function(e) {
+                            var n = {};
+                            if (!e.length) return Promise.resolve(n);
+                            for (var t = [], r = 0; r < e.length; r += 50) t.push(e.slice(r, r + 50));
+                            return __thumbPool(t, 2, function(t2) {
+                                return _.call3DSpace({
+                                    url: __bomThumbUrl(),
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    data: __bomThumbBody(t2),
+                                    type: "json"
+                                }).then(function(r2) {
+                                    (r2 && r2.results || []).forEach(function(e3) {
+                                        var n3 = "",
+                                            t3 = "";
+                                        (e3 && e3.attributes || []).forEach(function(e4) {
+                                            e4 && ("physicalid" !== e4.name || n3 ? "preview_url" !== e4.name || t3 || (t3 = e4.value || "") : n3 = e4.value || "")
+                                        }), n3 && t3 && /^https?:\/\//.test(t3) && (n[n3] = t3)
+                                    })
+                                }).catch(function(e3) {
+                                    console.warn("[Thumbnails] batch failed:", e3)
+                                }).then(function() {
+                                    t2.forEach(function(e3) {
+                                        e3 in n || (n[e3] = "")
+                                    })
+                                })
+                            }).then(function() {
+                                return n
+                            })
+                        },
+                        __resolveScopes = function(e) {
+                            var n = e.filter(function(n2) {
+                                return !(n2 in __scopeCache)
+                            });
+                            return __thumbPool(n, 4, function(n2) {
+                                return _.call3DSpace({
+                                    url: "/resources/v1/modeler/dsmfg/dsmfg:MfgItem/" + n2 + "/dsmfg:ScopeEngItem?xrequestedwith=xmlhttprequest",
+                                    method: "GET",
+                                    headers: {
+                                        Accept: "application/json"
+                                    },
+                                    type: "json"
+                                }).then(function(t2) {
+                                    __scopeLogged || (__scopeLogged = !0, console.log("[Thumbnails] scope sample:", JSON.stringify(t2 || {}).slice(0, 600)));
+                                    var r2 = t2 && t2.member || [],
+                                        a2 = "";
+                                    for (var o2 = 0; o2 < r2.length && !a2; o2++) {
+                                        var l2 = r2[o2];
+                                        if (l2) {
+                                            var i2 = l2.engItem || l2.EngItem || l2.engineeringItem || {},
+                                                c2 = [i2.identifier, i2.id, l2.engItemId, l2.identifier, l2.target, l2.targetId];
+                                            i2.relativePath && c2.push(String(i2.relativePath).split("/").pop()), l2.relativePath && c2.push(String(l2.relativePath).split("/").pop());
+                                            for (var u2 = 0; u2 < c2.length; u2++) {
+                                                var s2 = c2[u2];
+                                                if (s2 && /^[0-9A-Fa-f]{16,64}$/.test(String(s2)) && String(s2) !== n2) {
+                                                    a2 = String(s2);
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    }
+                                    __scopeCache[n2] = a2
+                                }).catch(function(t2) {
+                                    console.warn("[Thumbnails] scope lookup failed:", n2, t2), __scopeCache[n2] = ""
+                                })
+                            }).then(function() {
+                                var t2 = {};
+                                return e.forEach(function(e2) {
+                                    t2[e2] = __scopeCache[e2] || ""
+                                }), t2
+                            })
+                        },
                         __loadThumbs = function() {
                             if (a.selectedColumns && -1 !== a.selectedColumns.indexOf("_thumbnail") && !__thumbBusy) {
-                                var e = __collectThumbPids().filter(function(n) {
-                                    return !(n in Th.value)
+                                var e = __collectThumbPids().filter(function(n2) {
+                                    return !(n2 in Th.value)
                                 });
                                 if (e.length) {
                                     __thumbBusy = !0;
-                                    for (var n = [], t = 0; t < e.length; t += 50) n.push(e.slice(t, t + 50));
-                                    var r = 0,
-                                        o = function() {
-                                            if (r >= n.length) return Promise.resolve();
-                                            var e2 = n[r++];
-                                            return _.call3DSpace({
-                                                url: __bomThumbUrl(),
-                                                method: "POST",
-                                                headers: {
-                                                    "Content-Type": "application/json"
-                                                },
-                                                data: __bomThumbBody(e2),
-                                                type: "json"
-                                            }).then(function(t2) {
-                                                var r2 = {};
-                                                (t2 && t2.results || []).forEach(function(e3) {
-                                                    var n3 = "",
-                                                        t3 = "";
-                                                    (e3 && e3.attributes || []).forEach(function(e4) {
-                                                        e4 && ("physicalid" !== e4.name || n3 ? "preview_url" !== e4.name || t3 || (t3 = e4.value || "") : n3 = e4.value || "")
-                                                    }), n3 && t3 && /^https?:\/\//.test(t3) && (r2[n3] = t3)
-                                                }), e2.forEach(function(e3) {
-                                                    e3 in r2 || (r2[e3] = "")
-                                                }), Th.value = Object.assign({}, Th.value, r2)
-                                            }).catch(function(t2) {
-                                                console.warn("[Thumbnails] batch failed:", t2);
-                                                var r2 = {};
-                                                e2.forEach(function(e3) {
-                                                    r2[e3] = ""
-                                                }), Th.value = Object.assign({}, Th.value, r2)
-                                            }).then(o)
-                                        };
-                                    Promise.all([o(), o()]).then(function() {
+                                    var n = function() {
                                         __thumbBusy = !1, __loadThumbs()
-                                    })
+                                    };
+                                    "CreateAssembly" === a.itemType ? __resolveScopes(e).then(function(t2) {
+                                        var r2 = [];
+                                        return e.forEach(function(e2) {
+                                            var n2 = t2[e2];
+                                            n2 && !(n2 in __engThumbs) && r2.indexOf(n2) < 0 && r2.push(n2)
+                                        }), __fetchThumbBatch(r2).then(function(n2) {
+                                            Object.assign(__engThumbs, n2);
+                                            var r3 = {};
+                                            e.forEach(function(e3) {
+                                                r3[e3] = __engThumbs[t2[e3]] || ""
+                                            }), Th.value = Object.assign({}, Th.value, r3)
+                                        })
+                                    }).then(n, n) : __fetchThumbBatch(e).then(function(t2) {
+                                        Th.value = Object.assign({}, Th.value, t2)
+                                    }).then(n, n)
                                 }
                             }
                         };
