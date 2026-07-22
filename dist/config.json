@@ -1,0 +1,13 @@
+{
+  "tenant": "R1132101868454",
+  "attributeType": "VPMReference",
+  "endpoints": {
+    "bomExpand": "/cvservlet/progressiveexpand/v2",
+    "customAttributes": "/resources/ParamWS/datamodel/listofattributesfortype",
+    "ecosystem": "/resources/enorelnav/v2/navigate/getEcosystem"
+  },
+  "attributeMapping": {
+    "ds6wg:XP_VPMReference_Ext.Makebuy": "Zenvo_Vocab:Makebuy",
+    "ds6wg:XP_VPMReference_Ext.Car_System": "ds6w:browsingStructure1"
+  }
+}
