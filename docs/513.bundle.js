@@ -907,8 +907,11 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.3.6 (thumb4)");
-            var __bomUser = "",
+            console.log("[BOMWidget] 513 build v1.3.7 (materials1)");
+            var __bomMatUrl = function(kind) {
+                    return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
+                },
+                __bomUser = "",
                 __bomUserGet = function() {
                     if (__bomUser) return Promise.resolve(__bomUser);
                     try {
@@ -2003,7 +2006,9 @@
                                         _subqty: "Sub Qty",
                                         _totalqty: "Total Qty",
                                         _parentProduct: "Parent Product",
-                                        _thumbnail: "Thumbnail"
+                                        _thumbnail: "Thumbnail",
+                                        _coreMaterial: "Core Material",
+                                        _coveringMaterial: "Covering Material"
                                     } [e] || e.split(":").pop()
                                 }
                             })
@@ -2745,11 +2750,104 @@
                                     }).then(n, n)
                                 }
                             }
+                        },
+                        __matCoreCache = {},
+                        __matCovCache = {},
+                        __matBusy = !1,
+                        __bomMatFetch = function(kind, pids) {
+                            var out = {};
+                            if (!pids.length) return Promise.resolve(out);
+                            for (var chunks = [], i2 = 0; i2 < pids.length; i2 += 100) chunks.push(pids.slice(i2, i2 + 100));
+                            return __thumbPool(chunks, 2, function(chunk) {
+                                return _.call3DSpace({
+                                    url: __bomMatUrl(kind),
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        Accept: "application/json"
+                                    },
+                                    data: {
+                                        references: chunk
+                                    },
+                                    type: "json"
+                                }).then(function(d2) {
+                                    var infos = {};
+                                    (d2 && d2.references_infos || []).forEach(function(e3) {
+                                        e3 && e3.physicalid && (infos[e3.physicalid] = e3.V_Name || e3.V_AlternateName || "")
+                                    }), (d2 && d2.references || []).forEach(function(e3) {
+                                        if (e3 && e3.physicalid) {
+                                            var n3 = e3.corematerial || e3.coveringmaterial || [],
+                                                t3 = n3.length && n3[0] && n3[0].physicalid || "";
+                                            out[e3.physicalid] = t3 && infos[t3] || ""
+                                        }
+                                    })
+                                }).catch(function(e3) {
+                                    console.warn("[Materials] " + kind + " batch failed:", e3)
+                                }).then(function() {
+                                    chunk.forEach(function(e3) {
+                                        e3 in out || (out[e3] = "")
+                                    })
+                                })
+                            }).then(function() {
+                                return out
+                            })
+                        },
+                        __applyMaterials = function() {
+                            var e = "CreateAssembly" === a.itemType,
+                                n = -1 !== a.selectedColumns.indexOf("_coreMaterial"),
+                                t = -1 !== a.selectedColumns.indexOf("_coveringMaterial"),
+                                r = function(o2) {
+                                    Array.isArray(o2) && o2.forEach(function(l2) {
+                                        if (l2) {
+                                            if (l2.resourceid) {
+                                                var i2 = e ? __scopeCache[l2.resourceid] || "" : l2.resourceid;
+                                                n && (l2._coreMaterial = i2 && i2 in __matCoreCache ? __matCoreCache[i2] || "-" : l2._coreMaterial || "-"), t && (l2._coveringMaterial = i2 && i2 in __matCovCache ? __matCovCache[i2] || "-" : l2._coveringMaterial || "-")
+                                            }
+                                            l2.children && l2.children.length && r(l2.children)
+                                        }
+                                    })
+                                };
+                            r(s.value)
+                        },
+                        __loadMaterials = function() {
+                            var e = a.selectedColumns || [],
+                                n = -1 !== e.indexOf("_coreMaterial"),
+                                t = -1 !== e.indexOf("_coveringMaterial");
+                            if ((n || t) && !__matBusy) {
+                                var r = __collectThumbPids();
+                                if (r.length) {
+                                    __matBusy = !0;
+                                    var o2 = function() {
+                                            __matBusy = !1
+                                        },
+                                        l2 = function(e2) {
+                                            var r2 = [];
+                                            e2.forEach(function(e3) {
+                                                e3 && r2.indexOf(e3) < 0 && r2.push(e3)
+                                            });
+                                            var i2 = n ? r2.filter(function(e3) {
+                                                    return !(e3 in __matCoreCache)
+                                                }) : [],
+                                                c2 = t ? r2.filter(function(e3) {
+                                                    return !(e3 in __matCovCache)
+                                                }) : [];
+                                            if (!i2.length && !c2.length) return __applyMaterials(), void o2();
+                                            Promise.all([__bomMatFetch("CoreMaterial", i2), __bomMatFetch("CoveringMaterial", c2)]).then(function(e3) {
+                                                Object.assign(__matCoreCache, e3[0]), Object.assign(__matCovCache, e3[1]), __applyMaterials(), o2()
+                                            }, o2)
+                                        };
+                                    "CreateAssembly" === a.itemType ? __resolveScopes(r).then(function(e2) {
+                                        l2(r.map(function(n2) {
+                                            return e2[n2]
+                                        }))
+                                    }, o2) : l2(r)
+                                }
+                            }
                         };
                     (0, l.wB)(function() {
                         return [s.value, a.selectedColumns]
                     }, function() {
-                        __loadThumbs()
+                        __loadThumbs(), __loadMaterials()
                     }, {
                         immediate: !0
                     });
@@ -4678,6 +4776,16 @@
                             required: !1,
                             category: "ootb"
                         }, {
+                            key: "_coreMaterial",
+                            label: "Core Material",
+                            required: !1,
+                            category: "ootb"
+                        }, {
+                            key: "_coveringMaterial",
+                            label: "Covering Material",
+                            required: !1,
+                            category: "ootb"
+                        }, {
                             key: "name",
                             label: "Name",
                             required: !1,
@@ -5646,7 +5754,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.3.6"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.3.7"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
