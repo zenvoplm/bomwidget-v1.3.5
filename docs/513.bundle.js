@@ -907,7 +907,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.3.7 (materials1)");
+            console.log("[BOMWidget] 513 build v1.3.8 (materials2)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2754,41 +2754,57 @@
                         __matCoreCache = {},
                         __matCovCache = {},
                         __matBusy = !1,
-                        __bomMatFetch = function(kind, pids) {
+                        __bomMatFetch = function(kind, pids, onBatch) {
                             var out = {};
                             if (!pids.length) return Promise.resolve(out);
-                            for (var chunks = [], i2 = 0; i2 < pids.length; i2 += 100) chunks.push(pids.slice(i2, i2 + 100));
-                            return __thumbPool(chunks, 2, function(chunk) {
-                                return _.call3DSpace({
-                                    url: __bomMatUrl(kind),
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                        Accept: "application/json"
-                                    },
-                                    data: {
-                                        references: chunk
-                                    },
-                                    type: "json"
-                                }).then(function(d2) {
-                                    var infos = {};
-                                    (d2 && d2.references_infos || []).forEach(function(e3) {
-                                        e3 && e3.physicalid && (infos[e3.physicalid] = e3.V_Name || e3.V_AlternateName || "")
-                                    }), (d2 && d2.references || []).forEach(function(e3) {
-                                        if (e3 && e3.physicalid) {
-                                            var n3 = e3.corematerial || e3.coveringmaterial || [],
-                                                t3 = n3.length && n3[0] && n3[0].physicalid || "";
-                                            out[e3.physicalid] = t3 && infos[t3] || ""
+                            var queue = [];
+                            for (var i2 = 0; i2 < pids.length; i2 += 25) queue.push(pids.slice(i2, i2 + 25));
+                            var total = pids.length,
+                                done = 0,
+                                one = function(chunk) {
+                                    return _.call3DSpace({
+                                        url: __bomMatUrl(kind),
+                                        method: "POST",
+                                        headers: {
+                                            "Content-Type": "application/json",
+                                            Accept: "application/json"
+                                        },
+                                        data: {
+                                            references: chunk
+                                        },
+                                        type: "json"
+                                    }).then(function(d2) {
+                                        var infos = {},
+                                            part = {};
+                                        (d2 && d2.references_infos || []).forEach(function(e3) {
+                                            e3 && e3.physicalid && (infos[e3.physicalid] = e3.V_Name || e3.V_AlternateName || "")
+                                        }), (d2 && d2.references || []).forEach(function(e3) {
+                                            if (e3 && e3.physicalid) {
+                                                var n3 = e3.corematerial || e3.coveringmaterial || [],
+                                                    t3 = n3.length && n3[0] && n3[0].physicalid || "";
+                                                part[e3.physicalid] = t3 && infos[t3] || ""
+                                            }
+                                        }), chunk.forEach(function(e3) {
+                                            e3 in part || (part[e3] = "")
+                                        }), Object.assign(out, part), done += chunk.length, console.log("[Materials] " + kind + " " + done + "/" + total), onBatch && onBatch(part)
+                                    }).catch(function(e3) {
+                                        if (chunk.length >= 10) {
+                                            var n3 = Math.ceil(chunk.length / 2);
+                                            queue.push(chunk.slice(0, n3)), queue.push(chunk.slice(n3)), console.warn("[Materials] " + kind + " batch of " + chunk.length + " failed, retrying in halves:", e3 && e3.message || e3)
+                                        } else {
+                                            var t3 = {};
+                                            chunk.forEach(function(e4) {
+                                                e4 in out || (out[e4] = "", t3[e4] = "")
+                                            }), done += chunk.length, console.warn("[Materials] " + kind + " giving up on " + chunk.length + " items:", e3 && e3.message || e3), onBatch && onBatch(t3)
                                         }
                                     })
-                                }).catch(function(e3) {
-                                    console.warn("[Materials] " + kind + " batch failed:", e3)
-                                }).then(function() {
-                                    chunk.forEach(function(e3) {
-                                        e3 in out || (out[e3] = "")
-                                    })
-                                })
-                            }).then(function() {
+                                },
+                                worker = function() {
+                                    if (!queue.length) return Promise.resolve();
+                                    var e3 = queue.shift();
+                                    return one(e3).then(worker)
+                                };
+                            return Promise.all([worker(), worker(), worker()]).then(function() {
                                 return out
                             })
                         },
@@ -2832,7 +2848,11 @@
                                                     return !(e3 in __matCovCache)
                                                 }) : [];
                                             if (!i2.length && !c2.length) return __applyMaterials(), void o2();
-                                            Promise.all([__bomMatFetch("CoreMaterial", i2), __bomMatFetch("CoveringMaterial", c2)]).then(function(e3) {
+                                            Promise.all([__bomMatFetch("CoreMaterial", i2, function(e3) {
+                                                Object.assign(__matCoreCache, e3), __applyMaterials()
+                                            }), __bomMatFetch("CoveringMaterial", c2, function(e3) {
+                                                Object.assign(__matCovCache, e3), __applyMaterials()
+                                            })]).then(function(e3) {
                                                 Object.assign(__matCoreCache, e3[0]), Object.assign(__matCovCache, e3[1]), __applyMaterials(), o2()
                                             }, o2)
                                         };
@@ -5754,7 +5774,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.3.7"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.3.8"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
