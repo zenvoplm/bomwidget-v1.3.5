@@ -1,19 +1,21 @@
-/* Zenvo ERP Sync — "Send to ERP" butonu.  v1.4.1
- * Bundle kancaları: zen-erp-ctx (security context), zen-erp-root (açık BOM kökü),
- * zen-erp-config-applied (uygulanan konfigürasyon), window.__zenErpApi (call3DSpace).
- * Kurallar:
- *  - Buton yalnızca seçili context Owner (VPLMProjectAdministrator) iken görünür.
- *  - Konfigürasyon Apply edilmişse tepe kod = konfigürasyon adı (ZA-...).
- *  - Konfigürasyon YOKSA BOM filtresiz gider ve tepe kod, kökteki Manufacturing
- *    Assembly'nin kendi parça numarası olur (servis belirler).
- * Basılınca 3DX'e ERPSYNC kontrol kaydı (metadata-only Document) yazılır; ERP Sync
- * servisi ~2 dk'da bir tarar, işler ve durumu aynı kayda geri yazar.
+/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.4.2
+ * Bundle hooks: zen-erp-ctx (security context), zen-erp-root (loaded BOM root),
+ * zen-erp-config-applied (applied configuration), window.__zenErpApi (call3DSpace).
+ * Rules:
+ *  - Button is visible only when the selected security context is Owner
+ *    (VPLMProjectAdministrator).
+ *  - With an applied configuration: top code = configuration name (ZA-...).
+ *  - Without a configuration: the BOM is sent UNFILTERED and the top code is the
+ *    root Manufacturing Assembly's own part number (resolved by the service).
+ * Clicking writes an ERPSYNC control record (metadata-only Document) to 3DSpace;
+ * the ERP Sync service scans every ~2 min, processes it and writes status back.
  */
 (function () {
     "use strict";
-    var VERSION = "1.4.1";
+    var VERSION = "1.4.2";
     var OWNER_ROLE = "VPLMProjectAdministrator";
     var BTN_ID = "zen-erp-btn";
+    var ICON_URL = "static/images/business-central.webp";
     var ctx = window.__zenErpCtx || "";
     var root = window.__zenErpRoot || null;
     var applied = window.__zenErpApplied || null;
@@ -43,8 +45,16 @@
         btn.id = BTN_ID;
         btn.className = "toolbar-btn";
         btn.type = "button";
-        btn.textContent = "Send to ERP";
-        btn.style.cssText = "margin-left:6px;font-weight:600;";
+        btn.setAttribute("aria-label", "Send to ERP");
+        btn.style.cssText = "margin-left:6px;display:inline-flex;align-items:center;justify-content:center;";
+        var img = document.createElement("img");
+        img.src = ICON_URL;
+        img.alt = "Send to ERP";
+        img.style.cssText = "width:18px;height:18px;object-fit:contain;display:block;pointer-events:none;";
+        img.addEventListener("error", function () {
+            btn.textContent = "Send to ERP";   // fallback if the icon cannot load
+        });
+        btn.appendChild(img);
         btn.addEventListener("click", onClick);
         bar.appendChild(btn);
         refresh();
@@ -53,15 +63,16 @@
     function refresh() {
         var btn = document.getElementById(BTN_ID);
         if (!btn) return;
-        btn.style.display = isOwner() ? "" : "none";
+        btn.style.display = isOwner() ? "inline-flex" : "none";
         var t = target();
         var ready = isOwner() && !!t && !busy;
         btn.disabled = !ready;
         btn.style.opacity = ready ? "1" : "0.45";
-        btn.title = "ERP Sync v" + VERSION + " — " + (!isOwner() ? "yalnızca Owner context" :
-            !t ? "önce bir BOM açın" :
-            (applied ? "konfigürasyonu ERP'ye gönder / durumu göster"
-                     : "filtresiz BOM'u gönder (tepe kod = kök parça numarası)"));
+        btn.title = "Send to ERP (Business Central) v" + VERSION + " — " +
+            (!isOwner() ? "Owner context only" :
+             !t ? "open a BOM first" :
+             (applied ? "send this configuration / show sync status"
+                      : "send the unfiltered BOM (top code = root part number)"));
     }
 
     function storageKey(t) { return "zenErpSync." + (t.configurationId || t.rootPhysicalId); }
@@ -70,12 +81,12 @@
         var t = target();
         if (!t || busy) return;
         var api = window.__zenErpApi;
-        if (!api || !api.call3DSpace) { alert("ERP Sync: API köprüsü bulunamadı."); return; }
+        if (!api || !api.call3DSpace) { alert("ERP Sync: API bridge not available."); return; }
         var known = localStorage.getItem(storageKey(t));
         if (known) { showStatus(api, t, known); return; }
         if (!t.configurationId &&
-            !confirm("Konfigürasyon uygulanmadı.\nBOM FİLTRESİZ gönderilecek ve tepe kod, " +
-                     "kök montajın kendi parça numarası olacak.\nDevam edilsin mi?")) return;
+            !confirm("No configuration is applied.\nThe BOM will be sent UNFILTERED and the " +
+                     "top code will be the root assembly's own part number.\nContinue?")) return;
         createRecord(api, t);
     }
 
@@ -115,15 +126,15 @@
             var d = r && r.data && r.data[0];
             var id = d && (d.id || (d.dataelements && d.dataelements.id));
             if (id) localStorage.setItem(storageKey(t), id);
-            alert("ERP Sync isteği alındı.\n" +
-                (t.configurationId ? "Konfigürasyon: " + (cfg.name || t.configurationId)
-                                   : "Filtresiz BOM — tepe kod: kök parça numarası") +
-                "\nServis birkaç dakika içinde Business Central'da oluşturacak." +
-                "\nDurum için butona tekrar basın.");
+            alert("ERP Sync request accepted.\n" +
+                (t.configurationId ? "Configuration: " + (cfg.name || t.configurationId)
+                                   : "Unfiltered BOM — top code: root part number") +
+                "\nThe service will create it in Business Central within a few minutes." +
+                "\nClick the button again to see the status.");
         }).catch(function (e) {
             busy = false; refresh();
-            console.error("[zen-erp] kayıt oluşturulamadı", e);
-            alert("ERP Sync isteği oluşturulamadı: " + (e && e.message ? e.message : e));
+            console.error("[zen-erp] could not create request", e);
+            alert("Could not create the ERP Sync request: " + (e && e.message ? e.message : e));
         });
     }
 
@@ -135,21 +146,22 @@
             var d = r && r.data && r.data[0];
             var desc = d && ((d.dataelements && d.dataelements.description) || d.description);
             var st = null;
-            try { st = JSON.parse(desc).status; } catch (err) { /* durum yok */ }
+            try { st = JSON.parse(desc).status; } catch (err) { /* no status yet */ }
             if (st && st.phase && st.phase !== "REQUESTED") {
-                alert("ERP Sync durumu:\nTepe kod: " + (st.topCode || "-") +
-                    "\nFaz: " + st.phase +
-                    "\nSon senkron: " + (st.lastSyncAt || "-") +
-                    "\nSonuç: " + (st.lastResult || "-") +
-                    "\nItem sayısı: " + (st.itemCount != null ? st.itemCount : "-") +
-                    (st.conflicts && st.conflicts.length ? "\nÇakışmalar: " + st.conflicts.join("; ") : "") +
-                    (st.errors && st.errors.length ? "\nHatalar: " + st.errors.join("; ") : ""));
+                alert("ERP Sync status:\nTop code: " + (st.topCode || "-") +
+                    "\nPhase: " + st.phase +
+                    "\nLast sync: " + (st.lastSyncAt || "-") +
+                    "\nResult: " + (st.lastResult || "-") +
+                    "\nItem count: " + (st.itemCount != null ? st.itemCount : "-") +
+                    (st.conflicts && st.conflicts.length ? "\nConflicts: " + st.conflicts.join("; ") : "") +
+                    (st.errors && st.errors.length ? "\nErrors: " + st.errors.join("; ") : ""));
             } else {
-                alert("ERP Sync isteği kayıtlı, servis henüz işlemedi (REQUESTED).");
+                alert("ERP Sync request is registered; the service has not processed it yet (REQUESTED).");
             }
         }).catch(function () {
             localStorage.removeItem(storageKey(t));
-            alert("Kayıt okunamadı (silinmiş olabilir) — butona tekrar basarsanız yeni istek oluşturulur.");
+            alert("Could not read the request record (it may have been deleted) — " +
+                  "click the button again to create a new one.");
         });
     }
 
