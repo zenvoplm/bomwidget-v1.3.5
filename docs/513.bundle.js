@@ -128,16 +128,30 @@
                         c = void 0 === i ? {} : i;
                     return new Promise(function(e, n) {
                         a && "application/json" === c["Content-Type"] && (a = JSON.stringify(a)), requirejs(["DS/WAFData/WAFData"], function(o) {
-                            o.authenticatedRequest(encodeURI(r), {
+                            var u = "json" === l;
+                            u && (c.Accept || c.accept || (c.Accept = "application/json,text/javascript,*/*")), o.authenticatedRequest(encodeURI(r), {
                                 method: t,
                                 headers: c,
                                 data: a,
-                                type: l,
-                                onComplete: function(n, t) {
-                                    "json" === l ? (n && null !== n || (n = {}), e({
-                                        body: n,
-                                        headers: t
-                                    })) : e(n)
+                                type: u ? "text" : l,
+                                onComplete: function(s, d) {
+                                    if (!u) return e(s);
+                                    var p = s;
+                                    if ("string" == typeof p)
+                                        if ("" === p.trim()) p = {};
+                                        else try {
+                                            p = JSON.parse(p)
+                                        } catch (f) {
+                                            try {
+                                                p = JSON.parse(p.replace(/[\u0000-\u001F]/g, " ")), console.warn("[3DSpace] Response contained raw control characters; sanitized before parse:", r, f.message)
+                                            } catch (v) {
+                                                return n(f)
+                                            }
+                                        }
+                                    p && null !== p || (p = {}), e({
+                                        body: p,
+                                        headers: d
+                                    })
                                 },
                                 onFailure: function(e, t) {
                                     var r = "";
