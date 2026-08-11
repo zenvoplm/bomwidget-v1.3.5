@@ -128,30 +128,16 @@
                         c = void 0 === i ? {} : i;
                     return new Promise(function(e, n) {
                         a && "application/json" === c["Content-Type"] && (a = JSON.stringify(a)), requirejs(["DS/WAFData/WAFData"], function(o) {
-                            var u = "json" === l;
-                            u && (c.Accept || c.accept || (c.Accept = "application/json,text/javascript,*/*")), o.authenticatedRequest(encodeURI(r), {
+                            o.authenticatedRequest(encodeURI(r), {
                                 method: t,
                                 headers: c,
                                 data: a,
-                                type: u ? "text" : l,
-                                onComplete: function(s, d) {
-                                    if (!u) return e(s);
-                                    var p = s;
-                                    if ("string" == typeof p)
-                                        if ("" === p.trim()) p = {};
-                                        else try {
-                                            p = JSON.parse(p)
-                                        } catch (f) {
-                                            try {
-                                                p = JSON.parse(p.replace(/[\u0000-\u001F]/g, " ")), console.warn("[3DSpace] Response contained raw control characters; sanitized before parse:", r, f.message)
-                                            } catch (v) {
-                                                return n(f)
-                                            }
-                                        }
-                                    p && null !== p || (p = {}), e({
-                                        body: p,
-                                        headers: d
-                                    })
+                                type: l,
+                                onComplete: function(n, t) {
+                                    "json" === l ? (n && null !== n || (n = {}), e({
+                                        body: n,
+                                        headers: t
+                                    })) : e(n)
                                 },
                                 onFailure: function(e, t) {
                                     var r = "";
@@ -608,8 +594,10 @@
                 label: "Credentials",
                 defaultValue: "",
                 onchange: "onChangeSecurityContext"
-            }), L = widget.getValue(w), widget.addEvent("onChangeSecurityContext", function(e, n) {
-                e === w && (L = n, C.onSecurityContextChange.forEach(function(e) {
+            }), L = widget.getValue(w), window.__zenErpCtx = L, widget.addEvent("onChangeSecurityContext", function(e, n) {
+                e === w && (L = n, window.__zenErpCtx = L, document.dispatchEvent(new CustomEvent("zen-erp-ctx", {
+                    detail: L
+                })), C.onSecurityContextChange.forEach(function(e) {
                     e(L)
                 }))
             }), m.addEventListener("onTenantChange", function() {
@@ -624,6 +612,7 @@
                 (e = console).error.apply(e, arguments)
             });
             const _ = P;
+            window.__zenErpApi = P;
             var M = t(3959),
                 T = t(4213);
 
@@ -1810,7 +1799,18 @@
                         deep: !1
                     });
                     var S = function() {
-                            w.value && m.value && (x.value = !0, u("apply-configuration", {
+                            w.value && m.value && (x.value = !0, window.__zenErpApplied = {
+                                modelId: p.value,
+                                productId: w.value,
+                                configurationId: m.value,
+                                configuration: h.value.find(function(e) {
+                                    return e.id === m.value
+                                }),
+                                rootPhysicalId: a.rootPhysicalId,
+                                itemType: a.itemType
+                            }, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
+                                detail: window.__zenErpApplied
+                            })), u("apply-configuration", {
                                 modelId: p.value,
                                 productId: w.value,
                                 configurationId: m.value,
@@ -1827,7 +1827,9 @@
                             }))
                         },
                         P = function() {
-                            p.value = "", b.value = "", m.value = "", v.value = [], h.value = []
+                            p.value = "", b.value = "", m.value = "", v.value = [], h.value = [], window.__zenErpApplied = null, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
+                                detail: null
+                            }))
                         },
                         A = (0, c.KR)(""),
                         j = (0, c.KR)(""),
@@ -2714,7 +2716,7 @@
                                     for (var o2 = 0; o2 < r2.length && !a2; o2++) {
                                         var l2 = r2[o2];
                                         if (l2) {
-                                                                        var i2 = l2.ScopeEngItem || l2.PartialScopeEngItem || l2.engItem || l2.EngItem || l2.engineeringItem || {},
+                                            var i2 = l2.ScopeEngItem || l2.PartialScopeEngItem || l2.engItem || l2.EngItem || l2.engineeringItem || {},
                                                 c2 = [i2.identifier, i2.id, l2.engItemId, l2.identifier, l2.target, l2.targetId];
                                             i2.relativePath && c2.push(String(i2.relativePath).split("/").pop()), l2.relativePath && c2.push(String(l2.relativePath).split("/").pop());
                                             for (var u2 = 0; u2 < c2.length; u2++) {
