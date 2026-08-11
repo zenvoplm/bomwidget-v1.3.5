@@ -12,10 +12,16 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.4.2";
+    var VERSION = "1.4.3";
     var OWNER_ROLE = "VPLMProjectAdministrator";
     var BTN_ID = "zen-erp-btn";
-    var ICON_URL = "static/images/business-central.webp";
+    // Resolve the icon against this script's own URL so it works regardless of
+    // the page's base URL, and add a version query to bypass stale caches.
+    var SCRIPT_BASE = (function () {
+        var s = document.currentScript;
+        return (s && s.src) ? s.src.slice(0, s.src.lastIndexOf("/") + 1) : "";
+    })();
+    var ICON_URL = SCRIPT_BASE + "static/images/business-central.webp?v=" + VERSION;
     var ctx = window.__zenErpCtx || "";
     var root = window.__zenErpRoot || null;
     var applied = window.__zenErpApplied || null;
