@@ -5153,7 +5153,12 @@
                                 return Lt().w(function(e) {
                                     for (;;) switch (e.p = e.n) {
                                         case 0:
-                                            return n.value = !0, s.value = null, u.value = null, e.n = 1, ee();
+                                            return n.value = !0, window.__zenErpRoot = {
+                                                rootPhysicalId: y.value,
+                                                itemType: x.value
+                                            }, document.dispatchEvent(new CustomEvent("zen-erp-root", {
+                                                detail: window.__zenErpRoot
+                                            })), s.value = null, u.value = null, e.n = 1, ee();
                                         case 1:
                                             return t = function(e) {
                                                 var n = String(e || "").trim();
@@ -5324,7 +5329,12 @@
                                 return Lt().w(function(e) {
                                     for (;;) switch (e.p = e.n) {
                                         case 0:
-                                            return n.value = !0, r.value = "Expanding manufacturing structure...", s.value = null, u.value = null, e.p = 1, e.n = 2, B();
+                                            return n.value = !0, window.__zenErpRoot = {
+                                                rootPhysicalId: y.value,
+                                                itemType: x.value
+                                            }, document.dispatchEvent(new CustomEvent("zen-erp-root", {
+                                                detail: window.__zenErpRoot
+                                            })), r.value = "Expanding manufacturing structure...", s.value = null, u.value = null, e.p = 1, e.n = 2, B();
                                         case 2:
                                             return a = {
                                                 expandDepth: -1,

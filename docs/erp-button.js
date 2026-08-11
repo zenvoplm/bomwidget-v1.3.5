@@ -1,22 +1,38 @@
-/* Zenvo ERP Sync — "Send to ERP" butonu.
- * Tek widget stratejisi: bundle'daki iki kanca (zen-erp-ctx, zen-erp-config-applied)
- * ve window.__zenErpApi köprüsü ile çalışır. Buton yalnızca seçili security context
- * Owner (VPLMProjectAdministrator) iken görünür; bir Product Configuration Apply
- * edilmeden pasiftir. Basılınca 3DX'e ERPSYNC kontrol kaydı (metadata-only Document)
- * yazar; ERP Sync servisi bu kayıtları tarayıp Business Central'da oluşturur.
+/* Zenvo ERP Sync — "Send to ERP" butonu.  v1.4.1
+ * Bundle kancaları: zen-erp-ctx (security context), zen-erp-root (açık BOM kökü),
+ * zen-erp-config-applied (uygulanan konfigürasyon), window.__zenErpApi (call3DSpace).
+ * Kurallar:
+ *  - Buton yalnızca seçili context Owner (VPLMProjectAdministrator) iken görünür.
+ *  - Konfigürasyon Apply edilmişse tepe kod = konfigürasyon adı (ZA-...).
+ *  - Konfigürasyon YOKSA BOM filtresiz gider ve tepe kod, kökteki Manufacturing
+ *    Assembly'nin kendi parça numarası olur (servis belirler).
+ * Basılınca 3DX'e ERPSYNC kontrol kaydı (metadata-only Document) yazılır; ERP Sync
+ * servisi ~2 dk'da bir tarar, işler ve durumu aynı kayda geri yazar.
  */
 (function () {
     "use strict";
+    var VERSION = "1.4.1";
     var OWNER_ROLE = "VPLMProjectAdministrator";
     var BTN_ID = "zen-erp-btn";
     var ctx = window.__zenErpCtx || "";
+    var root = window.__zenErpRoot || null;
     var applied = window.__zenErpApplied || null;
     var busy = false;
 
+    console.log("[zen-erp] erp-button v" + VERSION);
+
     document.addEventListener("zen-erp-ctx", function (e) { ctx = e.detail || ""; refresh(); });
+    document.addEventListener("zen-erp-root", function (e) { root = e.detail || null; refresh(); });
     document.addEventListener("zen-erp-config-applied", function (e) { applied = e.detail; refresh(); });
 
     function isOwner() { return (ctx || "").indexOf(OWNER_ROLE) !== -1; }
+    function target() {
+        if (applied) return applied;
+        if (root) return { configurationId: "", configuration: null,
+                           modelId: "", productId: "",
+                           rootPhysicalId: root.rootPhysicalId, itemType: root.itemType };
+        return null;
+    }
 
     function ensureButton() {
         if (document.getElementById(BTN_ID)) { refresh(); return; }
@@ -38,38 +54,45 @@
         var btn = document.getElementById(BTN_ID);
         if (!btn) return;
         btn.style.display = isOwner() ? "" : "none";
-        var ready = isOwner() && !!applied && !busy;
+        var t = target();
+        var ready = isOwner() && !!t && !busy;
         btn.disabled = !ready;
         btn.style.opacity = ready ? "1" : "0.45";
-        btn.title = !isOwner() ? "Yalnızca Owner context" :
-            (applied ? "Konfigürasyonu ERP'ye gönder / durumu göster"
-                     : "Önce bir Product Configuration uygulayın (Apply)");
+        btn.title = "ERP Sync v" + VERSION + " — " + (!isOwner() ? "yalnızca Owner context" :
+            !t ? "önce bir BOM açın" :
+            (applied ? "konfigürasyonu ERP'ye gönder / durumu göster"
+                     : "filtresiz BOM'u gönder (tepe kod = kök parça numarası)"));
     }
 
-    function storageKey(cfgId) { return "zenErpSync." + cfgId; }
+    function storageKey(t) { return "zenErpSync." + (t.configurationId || t.rootPhysicalId); }
 
     function onClick() {
-        if (!applied || busy) return;
+        var t = target();
+        if (!t || busy) return;
         var api = window.__zenErpApi;
         if (!api || !api.call3DSpace) { alert("ERP Sync: API köprüsü bulunamadı."); return; }
-        var known = localStorage.getItem(storageKey(applied.configurationId));
-        if (known) { showStatus(api, known); return; }
-        createRecord(api);
+        var known = localStorage.getItem(storageKey(t));
+        if (known) { showStatus(api, t, known); return; }
+        if (!t.configurationId &&
+            !confirm("Konfigürasyon uygulanmadı.\nBOM FİLTRESİZ gönderilecek ve tepe kod, " +
+                     "kök montajın kendi parça numarası olacak.\nDevam edilsin mi?")) return;
+        createRecord(api, t);
     }
 
-    function createRecord(api) {
+    function createRecord(api, t) {
         busy = true; refresh();
-        var cfg = applied.configuration || {};
+        var cfg = t.configuration || {};
         var payload = {
             kind: "ERPSYNC",
             version: 1,
-            configurationId: applied.configurationId,
+            widgetVersion: VERSION,
+            configurationId: t.configurationId || "",
             configurationName: cfg.name || "",
             configurationTitle: cfg.title || cfg.description || "",
-            modelId: applied.modelId,
-            productId: applied.productId,
-            rootPhysicalId: applied.rootPhysicalId,
-            itemType: applied.itemType,
+            modelId: t.modelId || "",
+            productId: t.productId || "",
+            rootPhysicalId: t.rootPhysicalId,
+            itemType: t.itemType,
             requestedAt: new Date().toISOString(),
             syncNow: true,
             status: { phase: "REQUESTED" }
@@ -81,7 +104,7 @@
             data: {
                 data: [{
                     dataelements: {
-                        title: "ERPSYNC_" + applied.configurationId,
+                        title: "ERPSYNC_" + (t.configurationId || t.rootPhysicalId),
                         description: JSON.stringify(payload)
                     }
                 }]
@@ -91,8 +114,10 @@
             busy = false; refresh();
             var d = r && r.data && r.data[0];
             var id = d && (d.id || (d.dataelements && d.dataelements.id));
-            if (id) localStorage.setItem(storageKey(applied.configurationId), id);
-            alert("ERP Sync isteği alındı.\nKonfigürasyon: " + (cfg.name || applied.configurationId) +
+            if (id) localStorage.setItem(storageKey(t), id);
+            alert("ERP Sync isteği alındı.\n" +
+                (t.configurationId ? "Konfigürasyon: " + (cfg.name || t.configurationId)
+                                   : "Filtresiz BOM — tepe kod: kök parça numarası") +
                 "\nServis birkaç dakika içinde Business Central'da oluşturacak." +
                 "\nDurum için butona tekrar basın.");
         }).catch(function (e) {
@@ -102,7 +127,7 @@
         });
     }
 
-    function showStatus(api, docId) {
+    function showStatus(api, t, docId) {
         api.call3DSpace({
             url: "/resources/v1/modeler/documents/" + docId,
             method: "GET"
@@ -112,16 +137,18 @@
             var st = null;
             try { st = JSON.parse(desc).status; } catch (err) { /* durum yok */ }
             if (st && st.phase && st.phase !== "REQUESTED") {
-                alert("ERP Sync durumu:\nFaz: " + st.phase +
+                alert("ERP Sync durumu:\nTepe kod: " + (st.topCode || "-") +
+                    "\nFaz: " + st.phase +
                     "\nSon senkron: " + (st.lastSyncAt || "-") +
                     "\nSonuç: " + (st.lastResult || "-") +
-                    "\nSatır sayısı: " + (st.itemCount != null ? st.itemCount : "-") +
+                    "\nItem sayısı: " + (st.itemCount != null ? st.itemCount : "-") +
+                    (st.conflicts && st.conflicts.length ? "\nÇakışmalar: " + st.conflicts.join("; ") : "") +
                     (st.errors && st.errors.length ? "\nHatalar: " + st.errors.join("; ") : ""));
             } else {
                 alert("ERP Sync isteği kayıtlı, servis henüz işlemedi (REQUESTED).");
             }
         }).catch(function () {
-            localStorage.removeItem(storageKey(applied.configurationId));
+            localStorage.removeItem(storageKey(t));
             alert("Kayıt okunamadı (silinmiş olabilir) — butona tekrar basarsanız yeni istek oluşturulur.");
         });
     }
