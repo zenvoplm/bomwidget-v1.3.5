@@ -910,7 +910,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.3 (erp-sync)");
+            console.log("[BOMWidget] 513 build v1.4.4 (cont-qty)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -1878,7 +1878,7 @@
                             return n(s.value), e
                         },
                         X = function(e, n) {
-                            return "_qty" === n ? e.quantity || 1 : "_subqty" === n ? e.subQuantity || 1 : "_totalqty" === n ? e.totalQuantity || 1 : "_parentProduct" === n ? e._parentProduct || "-" : "ds6w:label" === n ? e["ds6w:label"] || e["ds6w:identifier"] || "-" : "ds6w:status" === n ? rt(e["ds6w:status"]) : "ds6w:type" === n ? e.displayType || e["ds6w:type"] || "-" : e[n] || "-"
+                            return "_qty" === n ? (null != e._contQty ? e._contQty + " " + (e._contUom || "") : e.quantity || 1) : "_subqty" === n ? e.subQuantity || 1 : "_totalqty" === n ? e.totalQuantity || 1 : "_parentProduct" === n ? e._parentProduct || "-" : "ds6w:label" === n ? e["ds6w:label"] || e["ds6w:identifier"] || "-" : "ds6w:status" === n ? rt(e["ds6w:status"]) : "ds6w:type" === n ? e.displayType || e["ds6w:type"] || "-" : e[n] || "-"
                         },
                         K = (0, l.EW)(function() {
                             if (!H.value) return [];
@@ -2643,7 +2643,7 @@
                             return y(b).forEach(function(e) {
                                 e.totalQuantity = m.get(e.resourceid) || e.subQuantity || 1
                             }), b.filter(Boolean)
-                        }(e), s.value.length > 0 && (s.value[0].expanded = !0)), x.value = !1
+                        }(e), s.value.length > 0 && (s.value[0].expanded = !0), window.__zenContApply && window.__zenContApply(e, s)), x.value = !1
                     }, {
                         immediate: !0
                     });
@@ -3584,7 +3584,7 @@
                                     class: (0, i.C4)({
                                         "qty-multiple": n.quantity > 1
                                     })
-                                }, (0, i.v_)(n.quantity || 1), 3)) : "_subqty" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                }, (0, i.v_)(null != n._contQty ? n._contQty + " " + (n._contUom || "") : n.quantity || 1), 3)) : "_subqty" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 1
                                 }, [(0, l.Q3)(" SubQty "), (0, l.Lk)("span", {
                                     class: (0, i.C4)({
@@ -5800,7 +5800,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.3"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.4"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
