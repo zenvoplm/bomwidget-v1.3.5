@@ -128,16 +128,30 @@
                         c = void 0 === i ? {} : i;
                     return new Promise(function(e, n) {
                         a && "application/json" === c["Content-Type"] && (a = JSON.stringify(a)), requirejs(["DS/WAFData/WAFData"], function(o) {
-                            o.authenticatedRequest(encodeURI(r), {
+                            var u = "json" === l;
+                            u && (c.Accept || c.accept || (c.Accept = "application/json,text/javascript,*/*")), o.authenticatedRequest(encodeURI(r), {
                                 method: t,
                                 headers: c,
                                 data: a,
-                                type: l,
-                                onComplete: function(n, t) {
-                                    "json" === l ? (n && null !== n || (n = {}), e({
-                                        body: n,
-                                        headers: t
-                                    })) : e(n)
+                                type: u ? "text" : l,
+                                onComplete: function(s, d) {
+                                    if (!u) return e(s);
+                                    var p = s;
+                                    if ("string" == typeof p)
+                                        if ("" === p.trim()) p = {};
+                                        else try {
+                                            p = JSON.parse(p)
+                                        } catch (f) {
+                                            try {
+                                                p = JSON.parse(p.replace(/[\u0000-\u001F]/g, " ")), console.warn("[3DSpace] Response contained raw control characters; sanitized before parse:", r, f.message)
+                                            } catch (v) {
+                                                return n(f)
+                                            }
+                                        }
+                                    p && null !== p || (p = {}), e({
+                                        body: p,
+                                        headers: d
+                                    })
                                 },
                                 onFailure: function(e, t) {
                                     var r = "";
@@ -613,6 +627,19 @@
             });
             const _ = P;
             window.__zenErpApi = P;
+            window.__zenErpSetRoot = function(rootId, itemType) {
+                try {
+                    window.__zenErpRoot = rootId ? {
+                        rootPhysicalId: rootId,
+                        itemType: itemType || "VPMReference"
+                    } : null;
+                    document.dispatchEvent(new CustomEvent("zen-erp-root", {
+                        detail: window.__zenErpRoot
+                    }))
+                } catch (e) {
+                    console.warn("[zen-erp] setRoot failed", e)
+                }
+            };
             var M = t(3959),
                 T = t(4213);
 
@@ -910,7 +937,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.4 (cont-qty)");
+            console.log("[BOMWidget] 513 build v1.4.5 (erp-sync, rebased on v1.3.9)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2716,7 +2743,7 @@
                                     for (var o2 = 0; o2 < r2.length && !a2; o2++) {
                                         var l2 = r2[o2];
                                         if (l2) {
-                                            var i2 = l2.ScopeEngItem || l2.PartialScopeEngItem || l2.engItem || l2.EngItem || l2.engineeringItem || {},
+                                                                        var i2 = l2.ScopeEngItem || l2.PartialScopeEngItem || l2.engItem || l2.EngItem || l2.engineeringItem || {},
                                                 c2 = [i2.identifier, i2.id, l2.engItemId, l2.identifier, l2.target, l2.targetId];
                                             i2.relativePath && c2.push(String(i2.relativePath).split("/").pop()), l2.relativePath && c2.push(String(l2.relativePath).split("/").pop());
                                             for (var u2 = 0; u2 < c2.length; u2++) {
@@ -5153,12 +5180,7 @@
                                 return Lt().w(function(e) {
                                     for (;;) switch (e.p = e.n) {
                                         case 0:
-                                            return n.value = !0, window.__zenErpRoot = {
-                                                rootPhysicalId: y.value,
-                                                itemType: x.value
-                                            }, document.dispatchEvent(new CustomEvent("zen-erp-root", {
-                                                detail: window.__zenErpRoot
-                                            })), s.value = null, u.value = null, e.n = 1, ee();
+                                            return n.value = !0, window.__zenErpSetRoot(y.value, "VPMReference"), s.value = null, u.value = null, e.n = 1, ee();
                                         case 1:
                                             return t = function(e) {
                                                 var n = String(e || "").trim();
@@ -5329,12 +5351,7 @@
                                 return Lt().w(function(e) {
                                     for (;;) switch (e.p = e.n) {
                                         case 0:
-                                            return n.value = !0, window.__zenErpRoot = {
-                                                rootPhysicalId: y.value,
-                                                itemType: x.value
-                                            }, document.dispatchEvent(new CustomEvent("zen-erp-root", {
-                                                detail: window.__zenErpRoot
-                                            })), r.value = "Expanding manufacturing structure...", s.value = null, u.value = null, e.p = 1, e.n = 2, B();
+                                            return n.value = !0, window.__zenErpSetRoot(y.value, "CreateAssembly"), r.value = "Expanding manufacturing structure...", s.value = null, u.value = null, e.p = 1, e.n = 2, B();
                                         case 2:
                                             return a = {
                                                 expandDepth: -1,
@@ -5800,7 +5817,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.4"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.5"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",

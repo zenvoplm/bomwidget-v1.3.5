@@ -12,7 +12,7 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.4.4";
+    var VERSION = "1.4.5";
     var OWNER_ROLE = "VPLMProjectAdministrator";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
