@@ -23,7 +23,11 @@
         var s = document.currentScript;
         return (s && s.src) ? s.src.slice(0, s.src.lastIndexOf("/") + 1) : "";
     })();
-    var ICON_URL = SCRIPT_BASE + "static/images/business-central.webp?v=" + VERSION;
+    // Try the webp first, then a png with the same name, then plain text.
+    var ICON_URLS = [
+        SCRIPT_BASE + "static/images/business-central.webp?v=" + VERSION,
+        SCRIPT_BASE + "static/images/business-central.png?v=" + VERSION
+    ];
     var ctx = window.__zenErpCtx || "";
     var root = window.__zenErpRoot || null;
     var applied = window.__zenErpApplied || null;
@@ -56,11 +60,14 @@
         btn.setAttribute("aria-label", "Send to ERP");
         btn.style.cssText = "margin-left:6px;display:inline-flex;align-items:center;justify-content:center;";
         var img = document.createElement("img");
-        img.src = ICON_URL;
+        var iconTry = 0;
+        img.src = ICON_URLS[iconTry];
         img.alt = "Send to ERP";
         img.style.cssText = "width:18px;height:18px;object-fit:contain;display:block;pointer-events:none;";
         img.addEventListener("error", function () {
-            btn.textContent = "Send to ERP";   // fallback if the icon cannot load
+            iconTry += 1;
+            if (iconTry < ICON_URLS.length) img.src = ICON_URLS[iconTry];
+            else btn.textContent = "Send to ERP";   // no icon available
         });
         btn.appendChild(img);
         btn.addEventListener("click", onClick);
