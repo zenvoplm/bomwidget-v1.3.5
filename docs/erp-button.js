@@ -1,9 +1,11 @@
-/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.4.2
+/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.4.6
  * Bundle hooks: zen-erp-ctx (security context), zen-erp-root (loaded BOM root),
  * zen-erp-config-applied (applied configuration), window.__zenErpApi (call3DSpace).
  * Rules:
- *  - Button is visible only when the selected security context is Owner
- *    (VPLMProjectAdministrator).
+ *  - Button is visible only when the selected security context is Leader
+ *    (VPLMProjectLeader). The Owner role (VPLMProjectAdministrator) has no
+ *    create access for Documents in the "Zenvo Automotive" collaborative space,
+ *    so the ERPSYNC control record can only be written from a Leader context.
  *  - With an applied configuration: top code = configuration name (ZA-...).
  *  - Without a configuration: the BOM is sent UNFILTERED and the top code is the
  *    root Manufacturing Assembly's own part number (resolved by the service).
@@ -12,8 +14,8 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.4.5";
-    var OWNER_ROLE = "VPLMProjectAdministrator";
+    var VERSION = "1.4.6";
+    var ALLOWED_ROLE = "VPLMProjectLeader";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
     // the page's base URL, and add a version query to bypass stale caches.
@@ -33,7 +35,7 @@
     document.addEventListener("zen-erp-root", function (e) { root = e.detail || null; refresh(); });
     document.addEventListener("zen-erp-config-applied", function (e) { applied = e.detail; refresh(); });
 
-    function isOwner() { return (ctx || "").indexOf(OWNER_ROLE) !== -1; }
+    function isAllowed() { return (ctx || "").indexOf(ALLOWED_ROLE) !== -1; }
     function target() {
         if (applied) return applied;
         if (root) return { configurationId: "", configuration: null,
@@ -69,13 +71,13 @@
     function refresh() {
         var btn = document.getElementById(BTN_ID);
         if (!btn) return;
-        btn.style.display = isOwner() ? "inline-flex" : "none";
+        btn.style.display = isAllowed() ? "inline-flex" : "none";
         var t = target();
-        var ready = isOwner() && !!t && !busy;
+        var ready = isAllowed() && !!t && !busy;
         btn.disabled = !ready;
         btn.style.opacity = ready ? "1" : "0.45";
         btn.title = "Send to ERP (Business Central) v" + VERSION + " — " +
-            (!isOwner() ? "Owner context only" :
+            (!isAllowed() ? "Leader context only" :
              !t ? "open a BOM first" :
              (applied ? "send this configuration / show sync status"
                       : "send the unfiltered BOM (top code = root part number)"));
