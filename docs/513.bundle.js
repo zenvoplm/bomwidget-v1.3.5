@@ -966,7 +966,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.11 (drawing/weight failures no longer look like verdicts)");
+            console.log("[BOMWidget] 513 build v1.4.12 (Car System no longer overwritten by empty fallback)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2894,7 +2894,7 @@
                                             if ("physicalid" === a3.name) pid = a3.value;
                                             else if ("ds6w:browsingStructure1" === a3.name) cs = a3.value || ""
                                         });
-                                        if (pid) __dcCs[pid] = cs
+                                        if (pid && (cs || !__dcCs[pid])) __dcCs[pid] = cs
                                     })
                                 }).catch(function(e2) {
                                     console.warn("[DrawingCheck] carsystem batch failed:", e2)
@@ -3083,7 +3083,12 @@
                                     var e2 = engOf[p2];
                                     if (e2 && engIds.indexOf(e2) < 0) engIds.push(e2)
                                 });
-                                return Promise.all([__dcEngAttrs(engIds), __dcCarSystem(engIds)]).then(function() {
+                                /* dseno:EnterpriseAttributes.Car_System is authoritative and must
+                                 * land before the ds6w:browsingStructure1 fallback runs; in parallel
+                                 * the fallback's empty answers could overwrite it. */
+                                return __dcEngAttrs(engIds).then(function() {
+                                    return __dcCarSystem(engIds)
+                                }).then(function() {
                                     /* parts already 'na' (phantom / standard / tooling / no eng)
                                      * need no drawing call — fill them right away. */
                                     var needEng = [];
@@ -6323,7 +6328,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.11"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.12"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
