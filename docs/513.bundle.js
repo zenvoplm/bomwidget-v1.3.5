@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.16 (3DPlay opens directly; drawing lookup fills batch by batch)");
+            console.log("[BOMWidget] 513 build v1.4.17 (Drawing cell patches without an expand/collapse)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2873,6 +2873,7 @@
                             t: 0
                         }),
                         __drwCache = {},
+                        __drwInFlight = {},
                         __drwBusy = !1,
                         __drwPending = {},
                         __drwFlushT = null,
@@ -2897,13 +2898,18 @@
                              * ElectricalGeometry harness nodes alike - because it walks
                              * the actual VPMRepInstance relation to the Drawing instead
                              * of asking the engineering modeler. */
-                            var need = ids.filter(function(e2) {
-                                return e2 && !(e2 in __drwCache)
+                            var need = [],
+                                waits = [];
+                            /* the Drawing and Drawing Check columns share this lookup;
+                             * whichever asks second waits for the batch already on the
+                             * wire instead of sending it again */
+                            ids.forEach(function(e2) {
+                                e2 && !(e2 in __drwCache) && (__drwInFlight[e2] ? waits.indexOf(__drwInFlight[e2]) < 0 && waits.push(__drwInFlight[e2]) : need.push(e2))
                             });
-                            if (!need.length) return Promise.resolve();
+                            if (!need.length && !waits.length) return Promise.resolve();
                             var jobs = [];
                             for (var i2 = 0; i2 < need.length; i2 += 200) jobs.push(need.slice(i2, i2 + 200));
-                            return __thumbPool(jobs, 2, function(chunk) {
+                            var pool = __thumbPool(jobs, 2, function(chunk) {
                                 return _.call3DSpace({
                                     url: "/cvservlet/progressiveexpand/v2?output_format=cvjson&xrequestedwith=xmlhttprequest",
                                     method: "POST",
@@ -2965,6 +2971,9 @@
                                         e3 in __drwCache || (__drwCache[e3] = "err", __dcErrWhy[e3] = String(e2 && e2.message || e2))
                                     })
                                 }).then(function() {
+                                    chunk.forEach(function(e3) {
+                                        delete __drwInFlight[e3]
+                                    });
                                     /* hand this batch over right away: the rows fill in
                                      * and the header counter moves while the rest of the
                                      * tree is still on the wire */
@@ -2975,7 +2984,13 @@
                                         }), onChunk(seen)
                                     }
                                 })
-                            })
+                            });
+                            /* claim every id up front, not when its batch starts: the
+                             * pool runs two at a time, so a second caller would
+                             * otherwise re-request everything still queued */
+                            return need.forEach(function(e2) {
+                                __drwInFlight[e2] = pool
+                            }), Promise.all([Promise.all(waits), pool])
                         },
                         __drwMirrorNodes = function() {
                             var walk = function(list) {
@@ -2992,37 +3007,29 @@
                             walk(s.value)
                         },
                         __drwCell = function(nd) {
-                            var v2 = Dw.value[nd.resourceid];
-                            if (!v2) return (0, l.Lk)("span", {
-                                style: {
-                                    color: "#9e9e9e"
-                                }
-                            }, "\u2026");
-                            if ("err" === v2) return (0, l.Lk)("span", {
-                                style: {
-                                    color: "#ef6c00",
-                                    fontWeight: "bold"
-                                },
-                                title: "Lookup failed - see console"
-                            }, "!");
-                            if (!v2.length) return (0, l.Lk)("span", {
-                                style: {
-                                    color: "#9e9e9e"
-                                }
-                            }, "\u2013");
-                            var d0 = v2[0];
+                            /* One <a> in every state, and a real patch flag on it.
+                             * A vnode created with no patch flag is not collected into
+                             * the block's dynamic children, so it is never patched - the
+                             * cell then kept its first value ("...") until an expand or
+                             * collapse rebuilt the row. FULL_PROPS | TEXT (16 | 1) puts
+                             * it back in the patch path, matching the neighbouring
+                             * Drawing Check and Weight cells. */
+                            var v2 = Dw.value[nd.resourceid],
+                                err = "err" === v2,
+                                d0 = v2 && !err && v2.length ? v2[0] : null;
                             return (0, l.Lk)("a", {
-                                href: "#",
-                                title: "Open " + d0.t + " in 3DPlay" + (v2.length > 1 ? " (" + v2.length + " drawings on this part)" : ""),
+                                href: d0 ? "#" : null,
+                                title: d0 ? "Open " + d0.t + " in 3DPlay" + (v2.length > 1 ? " (" + v2.length + " drawings on this part)" : "") : err ? "Lookup failed - see console" : v2 ? "No drawing" : "Loading\u2026",
                                 style: {
-                                    color: "#1976d2",
-                                    textDecoration: "underline",
-                                    cursor: "pointer"
+                                    color: d0 ? "#1976d2" : err ? "#ef6c00" : "#9e9e9e",
+                                    fontWeight: err ? "bold" : "normal",
+                                    textDecoration: d0 ? "underline" : "none",
+                                    cursor: d0 ? "pointer" : "default"
                                 },
-                                onClick: function(ev) {
+                                onClick: d0 ? function(ev) {
                                     ev.preventDefault(), ev.stopPropagation(), _.open3DPlay(d0.id, "Drawing", d0.t)
-                                }
-                            }, d0.t + (v2.length > 1 ? " +" + (v2.length - 1) : ""))
+                                } : null
+                            }, d0 ? d0.t + (v2.length > 1 ? " +" + (v2.length - 1) : "") : err ? "!" : v2 ? "\u2013" : "\u2026", 17)
                         },
                         __loadDrawing = function() {
                             if (!a.selectedColumns || -1 === a.selectedColumns.indexOf("_drawing") || __drwBusy) return;
@@ -6455,7 +6462,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.16"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.17"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
