@@ -966,7 +966,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.10 (weight column + column loading status)");
+            console.log("[BOMWidget] 513 build v1.4.11 (drawing/weight failures no longer look like verdicts)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2828,6 +2828,8 @@
                         Dc = (0, c.KR)({}),
                         __dcBusy = !1,
                         __dcDrw = {},
+                        __dcErrWhy = {},
+                        __dcEngOf = {},
                         __dcCs = {},
                         __dcMb = {},
                         __dcEngAttrs = function(engIds) {
@@ -2950,7 +2952,7 @@
                             var cs = String(__dcCs[eng] || "");
                             if ("100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) return "na";
                             var hd = __dcDrw[eng];
-                            return null == hd ? "na" : hd ? "yes" : "no"
+                            return "err" === hd ? "err" : null == hd ? "na" : hd ? "yes" : "no"
                         },
                         __dcSet = function(pid, st) {
                             /* incremental: buffer and flush ~5x/sec so cells fill in
@@ -2971,7 +2973,8 @@
                             var g = {
                                     yes: "Yes",
                                     no: "No",
-                                    na: "-"
+                                    na: "-",
+                                    err: "?"
                                 },
                                 walk = function(list) {
                                     (list || []).forEach(function(nd) {
@@ -2981,11 +2984,23 @@
                                 };
                             walk(s.value)
                         },
-                        __dcDrawOne = function(eng) {
+                        __dcDrawOne = function(eng, retry) {
                             /* one EngRepInstance call with a 20 s timeout so a single
-                             * stuck request can never block the column. */
+                             * stuck request can never block the column. A failed or
+                             * timed-out lookup is recorded as "err", NOT as null:
+                             * null used to render as the grey "-" of the business rule
+                             * (standard part / tooling / phantom), which hid real
+                             * errors behind a legitimate-looking value. */
                             if (eng in __dcDrw) return Promise.resolve();
-                            var call = _.call3DSpace({
+                            var fail = function(why) {
+                                    if (retry) return __dcDrw[eng] = "err", void(__dcErrWhy[eng] = why);
+                                    return new Promise(function(res) {
+                                        setTimeout(res, 1500)
+                                    }).then(function() {
+                                        return __dcDrawOne(eng, !0)
+                                    })
+                                },
+                                call = _.call3DSpace({
                                     url: "/resources/v1/modeler/dseng/dseng:EngItem/" + eng + "/dseng:EngRepInstance?xrequestedwith=xmlhttprequest",
                                     method: "GET",
                                     headers: {
@@ -2999,11 +3014,16 @@
                                     }, 20000)
                                 });
                             return Promise.race([call, timeout]).then(function(d2) {
-                                __dcDrw[eng] = "__t__" === d2 ? null : (d2 && d2.member || []).some(function(m2) {
+                                if ("__t__" === d2) return fail("timeout after 20 s");
+                                __dcDrw[eng] = (d2 && d2.member || []).some(function(m2) {
                                     return /^drw-/i.test(String(m2.name || ""))
                                 })
-                            }).catch(function() {
-                                __dcDrw[eng] = null
+                            }, function(e2) {
+                                return fail(function(e3) {
+                                    if (!e3) return "unknown error";
+                                    var st = e3.status || e3.statusCode || e3.errorCode || (e3.response && e3.response.status);
+                                    return (st ? "HTTP " + st + " " : "") + String(e3.message || e3.statusText || e3)
+                                }(e2))
                             })
                         },
                         __loadDrawingCheck = function() {
@@ -3025,10 +3045,31 @@
                                 __dcMirrorNodes(), __dcBusy = !1, DcProg.value = {
                                     d: 0,
                                     t: 0
+                                };
+                                /* one compact summary so a failing column can be
+                                 * diagnosed from a console screenshot */
+                                var tally = {
+                                    yes: 0,
+                                    no: 0,
+                                    na: 0,
+                                    err: 0
+                                };
+                                pids.forEach(function(p2) {
+                                    var v2 = Dc.value[p2];
+                                    v2 in tally && tally[v2]++
+                                });
+                                console.log("[DrawingCheck] " + pids.length + " rows in " + ((Date.now() - t0) / 1000).toFixed(1) + " s -> drawing " + tally.yes + ", no drawing " + tally.no + ", not applicable " + tally.na + ", failed " + tally.err);
+                                if (tally.err) {
+                                    var seen = {};
+                                    Object.keys(__dcErrWhy).forEach(function(k2) {
+                                        seen[__dcErrWhy[k2]] = (seen[__dcErrWhy[k2]] || 0) + 1
+                                    });
+                                    console.warn("[DrawingCheck] failure reasons:", seen)
                                 }
                             };
                             /* MBOM node ids are mfg items -> resolve to their scope EngItem;
                              * EBOM node ids are EngItems already. */
+                            var t0 = Date.now();
                             var mapEng = "CreateAssembly" === a.itemType ? __resolveScopes(pids) : Promise.resolve((function() {
                                 var m2 = {};
                                 pids.forEach(function(p2) {
@@ -3055,6 +3096,9 @@
                                         if (needEng.indexOf(eng) < 0) needEng.push(eng)
                                     });
                                     /* the rest: per-eng drawing lookup, applied incrementally */
+                                    pids.forEach(function(p2) {
+                                        __dcEngOf[p2] = engOf[p2] || ""
+                                    });
                                     return __thumbPool(needEng, 6, function(eng) {
                                         return __dcDrawOne(eng).then(function() {
                                             pids.forEach(function(p2) {
@@ -3140,8 +3184,17 @@
                                             dw: dw
                                         })
                                     })
-                                }).catch(function(e2) {
-                                    console.warn("[Weight] batch failed:", e2)
+                                }, function(e2) {
+                                    /* a failed batch must not look like "no weight
+                                     * defined" (red) - mark it as an error instead */
+                                    console.warn("[Weight] batch failed:", e2);
+                                    chunk.forEach(function(e3) {
+                                        e3 in __wtCache || (__wtCache[e3] = {
+                                            w: "",
+                                            dw: "",
+                                            e: 1
+                                        })
+                                    })
                                 }).then(function() {
                                     chunk.forEach(function(e3) {
                                         e3 in __wtCache || (__wtCache[e3] = {
@@ -3157,6 +3210,10 @@
                             if (!c2) return {
                                 t: "-",
                                 k: "missing"
+                            };
+                            if (c2.e) return {
+                                t: "!",
+                                k: "error"
                             };
                             var dw = parseFloat(c2.dw),
                                 w = parseFloat(c2.w);
@@ -4107,19 +4164,19 @@
                                 }, [(0, l.Q3)(" Weight "), (0, l.Lk)("span", {
                                     style: (0, i.Tr)({
                                         fontWeight: "bold",
-                                        color: Wt.value[n.resourceid] ? "declared" === Wt.value[n.resourceid].k ? "#0000FF" : "computed" === Wt.value[n.resourceid].k ? "#007a3e" : "#FF0000" : "#9e9e9e"
+                                        color: Wt.value[n.resourceid] ? "declared" === Wt.value[n.resourceid].k ? "#0000FF" : "computed" === Wt.value[n.resourceid].k ? "#007a3e" : "error" === Wt.value[n.resourceid].k ? "#ef6c00" : "#FF0000" : "#9e9e9e"
                                     }),
-                                    title: Wt.value[n.resourceid] ? "declared" === Wt.value[n.resourceid].k ? "Declared weight" : "computed" === Wt.value[n.resourceid].k ? "Computed weight" : "No weight defined" : "Loading\u2026"
+                                    title: Wt.value[n.resourceid] ? "declared" === Wt.value[n.resourceid].k ? "Declared weight" : "computed" === Wt.value[n.resourceid].k ? "Computed weight" : "error" === Wt.value[n.resourceid].k ? "Lookup failed - not a weight verdict (see console)" : "No weight defined" : "Loading\u2026"
                                 }, (0, i.v_)(Wt.value[n.resourceid] ? Wt.value[n.resourceid].t : "\u2026"), 5)], 2112)) : "_drawingcheck" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 12
                                 }, [(0, l.Q3)(" Drawing Check "), (0, l.Lk)("span", {
                                     style: (0, i.Tr)({
                                         fontWeight: "bold",
                                         fontSize: "15px",
-                                        color: "yes" === Dc.value[n.resourceid] ? "#2e7d32" : "no" === Dc.value[n.resourceid] ? "#c62828" : "#9e9e9e"
+                                        color: "yes" === Dc.value[n.resourceid] ? "#2e7d32" : "no" === Dc.value[n.resourceid] ? "#c62828" : "err" === Dc.value[n.resourceid] ? "#ef6c00" : "#9e9e9e"
                                     }),
-                                    title: "yes" === Dc.value[n.resourceid] ? "Drawing attached" : "no" === Dc.value[n.resourceid] ? "No drawing" : "na" === Dc.value[n.resourceid] ? "Not applicable (standard / tooling / phantom)" : "Checking…"
-                                }, (0, i.v_)("yes" === Dc.value[n.resourceid] ? "✓" : "no" === Dc.value[n.resourceid] ? "✗" : "na" === Dc.value[n.resourceid] ? "–" : "…"), 5)], 2112)) : ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                    title: "yes" === Dc.value[n.resourceid] ? "Drawing attached" : "no" === Dc.value[n.resourceid] ? "No drawing" : "err" === Dc.value[n.resourceid] ? "Check failed - not a drawing verdict (" + (__dcErrWhy[__dcEngOf[n.resourceid] || n.resourceid] || "see console") + ")" : "na" === Dc.value[n.resourceid] ? "Not applicable (standard / tooling / phantom)" : "Checking…"
+                                }, (0, i.v_)("yes" === Dc.value[n.resourceid] ? "✓" : "no" === Dc.value[n.resourceid] ? "✗" : "err" === Dc.value[n.resourceid] ? "!" : "na" === Dc.value[n.resourceid] ? "–" : "…"), 5)], 2112)) : ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 9
                                 }, [(0, l.Q3)(" Other "), (0, l.Lk)("span", yn, (0, i.v_)(it(n[t.key], t.key)), 1)], 2112))], 4);
                                 var r
@@ -6266,7 +6323,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.10"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.11"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
