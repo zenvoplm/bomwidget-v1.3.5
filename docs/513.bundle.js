@@ -603,12 +603,10 @@
                 },
                 open3DPlay: function(objId, objectType, title) {
                     /* The native "open in 3DPlay" flow loads app X3DPLAW_AP on the
-                     * dashboard (ifwe) origin and passes the object as ordinary
-                     * 3DXContent. It is shown in an overlay inside the widget: a top
-                     * navigation would take the dashboard away and discard the
-                     * expanded BOM tree, and a new tab leaves the list behind. The
-                     * ifwe host sends no X-Frame-Options/CSP, so it can be framed;
-                     * the header still carries a new-tab escape hatch. */
+                     * dashboard (ifwe) origin with the object as ordinary 3DXContent.
+                     * The widget sits in an iframe of that dashboard, so navigating
+                     * the top window hands this tab over to 3DPlay exactly as the
+                     * platform's own commands do. */
                     if (!objId) return;
                     var t = m.getCurrentTenant(),
                         sp = "";
@@ -633,61 +631,12 @@
                         }
                     }));
                     console.log("[3DPlay] opening " + (title || objId));
-                    var prev = document.getElementById("zen-3dplay-modal");
-                    prev && prev.parentNode && prev.parentNode.removeChild(prev);
-                    var ov = document.createElement("div");
-                    ov.id = "zen-3dplay-modal";
-                    ov.style.cssText = "position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
-                    var box = document.createElement("div");
-                    box.style.cssText = "background:#fff;width:95%;height:93%;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.35);";
-                    var head = document.createElement("div");
-                    head.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #e0e0e0;background:#fafafa;font:600 12px system-ui,-apple-system,Segoe UI,sans-serif;color:#212121;";
-                    var name = document.createElement("span");
-                    name.textContent = title || objId;
-                    name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-                    var tab = document.createElement("a");
-                    tab.href = url, tab.target = "_blank", tab.rel = "noopener";
-                    tab.textContent = "Open in a new tab";
-                    tab.style.cssText = "font-weight:500;font-size:11px;color:#1976d2;text-decoration:underline;";
-                    var fs = document.createElement("button");
-                    fs.type = "button", fs.textContent = "⛶";
-                    fs.title = "Fullscreen - the overlay is otherwise limited to the widget's own area";
-                    fs.style.cssText = "border:none;background:none;cursor:pointer;font-size:14px;line-height:1;color:#616161;padding:0 2px;";
-                    var x = document.createElement("button");
-                    x.type = "button", x.textContent = "✕";
-                    x.title = "Close (Esc)";
-                    x.style.cssText = "border:none;background:none;cursor:pointer;font-size:16px;line-height:1;color:#616161;padding:0 2px;";
-                    var frame = document.createElement("iframe");
-                    frame.src = url;
-                    frame.style.cssText = "flex:1;border:0;width:100%;";
-                    frame.setAttribute("allow", "fullscreen");
-                    var close = function() {
-                        document.removeEventListener("keydown", esc);
-                        ov.parentNode && ov.parentNode.removeChild(ov)
-                    };
-                    var esc = function(e) {
-                        27 === e.keyCode && close()
-                    };
-                    fs.addEventListener("click", function() {
-                        try {
-                            document.fullscreenElement ? document.exitFullscreen() : ov.requestFullscreen && ov.requestFullscreen()
-                        } catch (e) {
-                            console.warn("[3DPlay] fullscreen refused:", e)
-                        }
-                    });
-                    x.addEventListener("click", function() {
-                        try {
-                            document.fullscreenElement && document.exitFullscreen()
-                        } catch (e) {}
-                        close()
-                    });
-                    ov.addEventListener("click", function(e) {
-                        e.target === ov && close()
-                    });
-                    document.addEventListener("keydown", esc);
-                    head.appendChild(name), head.appendChild(tab), head.appendChild(fs), head.appendChild(x);
-                    box.appendChild(head), box.appendChild(frame), ov.appendChild(box);
-                    document.body.appendChild(ov)
+                    try {
+                        window.top.location.href = url
+                    } catch (e) {
+                        /* a sandboxed frame may refuse the top navigation */
+                        console.warn("[3DPlay] top navigation refused (" + e + ") - opening a new tab"), window.open(url, "_blank")
+                    }
                 }
             };
             void 0 === widget.getPreference(w) && widget.addPreference({
@@ -1054,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.15 (3DPlay opens in an overlay inside the widget)");
+            console.log("[BOMWidget] 513 build v1.4.16 (3DPlay opens directly; drawing lookup fills batch by batch)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2942,7 +2891,7 @@
                                 }
                             }, 200)
                         },
-                        __drwFetch = function(ids) {
+                        __drwFetch = function(ids, onChunk) {
                             /* One graph expand answers for a whole page of rows and
                              * works for every object type - EngItem and the
                              * ElectricalGeometry harness nodes alike - because it walks
@@ -3015,6 +2964,16 @@
                                     chunk.forEach(function(e3) {
                                         e3 in __drwCache || (__drwCache[e3] = "err", __dcErrWhy[e3] = String(e2 && e2.message || e2))
                                     })
+                                }).then(function() {
+                                    /* hand this batch over right away: the rows fill in
+                                     * and the header counter moves while the rest of the
+                                     * tree is still on the wire */
+                                    if (onChunk) {
+                                        var seen = {};
+                                        chunk.forEach(function(e3) {
+                                            seen[e3] = !0
+                                        }), onChunk(seen)
+                                    }
                                 })
                             })
                         },
@@ -3093,7 +3052,12 @@
                                 return pids.forEach(function(p2) {
                                     var e2 = engOf[p2];
                                     e2 && ids.indexOf(e2) < 0 && ids.push(e2)
-                                }), __drwFetch(ids).then(function() {
+                                }), __drwFetch(ids, function(seen) {
+                                    pids.forEach(function(p2) {
+                                        var e2 = engOf[p2];
+                                        e2 && seen[e2] && __drwSet(p2, __drwCache[e2] || [])
+                                    })
+                                }).then(function() {
                                     pids.forEach(function(p2) {
                                         __drwSet(p2, __drwCache[engOf[p2]] || [])
                                     })
@@ -3255,14 +3219,16 @@
                                     });
                                     /* same source as the Drawing column, so the two can
                                      * never disagree */
-                                    return __drwFetch(needEng).then(function() {
+                                    var fill = function(seen) {
                                         pids.forEach(function(p2) {
-                                            if (p2 in Dc.value) return;
                                             var eng = engOf[p2];
-                                            if (!eng) return;
+                                            if (!eng || seen && !seen[eng]) return;
                                             var v2 = __drwCache[eng];
-                                            __dcSet(p2, "err" === v2 ? "err" : v2 && v2.length ? "yes" : "no")
+                                            void 0 !== v2 && __dcSet(p2, "err" === v2 ? "err" : v2.length ? "yes" : "no")
                                         })
+                                    };
+                                    return __drwFetch(needEng, fill).then(function() {
+                                        fill(null)
                                     })
                                 })
                             }).then(done, function(e2) {
@@ -6489,7 +6455,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.15"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.16"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",

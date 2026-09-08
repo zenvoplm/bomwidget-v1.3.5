@@ -1,4 +1,4 @@
-/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.4.15
+/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.4.16
  * Bundle hooks: zen-erp-ctx (security context), zen-erp-root (loaded BOM root),
  * zen-erp-config-applied (applied configuration), window.__zenErpApi (call3DSpace).
  * Rules:
@@ -14,7 +14,7 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.4.15";
+    var VERSION = "1.4.16";
     var ALLOWED_ROLE = "VPLMProjectLeader";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
