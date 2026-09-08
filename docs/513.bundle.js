@@ -601,43 +601,37 @@
                         })
                     })
                 },
-                call3DSearch: function(query, opts) {
-                    /* Federated Search runs on its own service host. The compass
-                     * normally hands it out as "3DSearch"; if it does not, derive
-                     * it from the 3DSpace url (...-space... -> ...-fedsearch...). */
+                open3DPlay: function(objId, objectType, title) {
+                    /* The native "open in 3DPlay" flow loads app X3DPLAW_AP on the
+                     * dashboard (ifwe) origin and passes the object as ordinary
+                     * 3DXContent. A new tab is used on purpose: navigating the top
+                     * window would take the dashboard away and throw the expanded
+                     * BOM tree away with it. */
+                    if (!objId) return;
                     var t = m.getCurrentTenant(),
-                        base = "";
+                        sp = "";
                     try {
-                        base = m.getUrlForTenantAndService(t, "3DSearch") || ""
+                        sp = m.getUrlForTenantAndService(t, "3DSpace") || ""
                     } catch (e) {}
-                    if (!base) {
-                        var sp = "";
-                        try {
-                            sp = m.getUrlForTenantAndService(t, "3DSpace") || ""
-                        } catch (e) {}
-                        base = sp ? sp.split("/enovia")[0].replace("-space", "-fedsearch") : ""
-                    }
-                    if (!base) return Promise.reject(new Error("no search service url for tenant " + t));
-                    return m.callWebService({
-                        method: "POST",
-                        url: base + "/federated/search?xrequestedwith=xmlhttprequest",
-                        headers: {
-                            "Content-Type": "application/json",
-                            SecurityContext: L || ""
-                        },
+                    var host = /^(https?:\/\/[^\/]+)/.exec(sp),
+                        origin = host ? host[1].replace(/-space\./, "-ifwe.") : "";
+                    if (!origin) return void console.warn("[3DPlay] platform origin unknown - cannot open", objId);
+                    var url = origin + "/#app:X3DPLAW_AP/content:X3DContentId=" + encodeURIComponent(JSON.stringify({
+                        protocol: "3DXContent",
+                        version: "",
+                        source: "",
+                        widgetId: "",
                         data: {
-                            label: (opts && opts.label) || "zen-search",
-                            query: query,
-                            start: "0",
-                            nresults: (opts && opts.nresults) || 100,
-                            tenant: t,
-                            with_indexing_date: !1,
-                            select_predicate: (opts && opts.select) || ["physicalid", "ds6w:label", "ds6w:identifier"]
-                        },
-                        type: "json"
-                    }).then(function(r2) {
-                        return r2 && r2.body || {}
-                    })
+                            items: [{
+                                envId: t,
+                                serviceId: "3DSpace",
+                                objectId: objId,
+                                objectType: objectType || "Drawing"
+                            }]
+                        }
+                    }));
+                    console.log("[3DPlay] opening " + (title || objId));
+                    window.open(url, "_blank") || (window.top.location.href = url)
                 }
             };
             void 0 === widget.getPreference(w) && widget.addPreference({
@@ -1004,7 +998,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.13 (drawing check for electrical items; 6wtag fallback dropped)");
+            console.log("[BOMWidget] 513 build v1.4.14 (Drawing column with 3DPlay link; columns moved to EBOM Custom)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2120,6 +2114,7 @@
                                         _coreMaterial: "Core Material",
                                         _coveringMaterial: "Covering Material",
                                         _drawingcheck: "Drawing Check",
+                                        _drawing: "Drawing",
                                         _weight: "Weight"
                                     } [e] || e.split(":").pop()
                                 }
@@ -2262,7 +2257,7 @@
                                 }
                                 return !1
                             };
-                            n(s.value), __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight()
+                            n(s.value), __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight(), __loadDrawing && __loadDrawing()
                         },
                         Gn = function() {
                             var e = ue(le().m(function e() {
@@ -2319,7 +2314,7 @@
                                                 return setTimeout(e, 200)
                                             });
                                         case 5:
-                                            V.value = !1, Cn.value = 0, Ln.value = 0, __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight();
+                                            V.value = !1, Cn.value = 0, Ln.value = 0, __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight(), __loadDrawing && __loadDrawing();
                                         case 6:
                                             return e.a(2)
                                     }
@@ -2865,48 +2860,190 @@
                         },
                         Dc = (0, c.KR)({}),
                         __dcBusy = !1,
-                        __dcDrw = {},
                         __dcErrWhy = {},
                         __dcEngOf = {},
-                        __dcNotEng = {},
-                        __dcPnOf = {},
-                        __dcPnDrw = {},
-                        __dcDrwByPn = function(pns) {
-                            /* Drawing objects are named "<part number>-<title>", so one
-                             * OR-batched Federated Search covers a whole page of rows. */
-                            var need = pns.filter(function(p2) {
-                                return p2 && !(p2 in __dcPnDrw)
+                        Dw = (0, c.KR)({}),
+                        DwProg = (0, c.KR)({
+                            d: 0,
+                            t: 0
+                        }),
+                        __drwCache = {},
+                        __drwBusy = !1,
+                        __drwPending = {},
+                        __drwFlushT = null,
+                        __drwDone = 0,
+                        __drwTotal = 0,
+                        __drwSet = function(pid, val) {
+                            if (pid in __drwPending || pid in Dw.value) return;
+                            __drwPending[pid] = val;
+                            __drwDone++;
+                            if (!__drwFlushT) __drwFlushT = setTimeout(function() {
+                                Dw.value = Object.assign({}, Dw.value, __drwPending);
+                                __drwPending = {}, __drwFlushT = null;
+                                DwProg.value = {
+                                    d: __drwDone,
+                                    t: __drwTotal
+                                }
+                            }, 200)
+                        },
+                        __drwFetch = function(ids) {
+                            /* One graph expand answers for a whole page of rows and
+                             * works for every object type - EngItem and the
+                             * ElectricalGeometry harness nodes alike - because it walks
+                             * the actual VPMRepInstance relation to the Drawing instead
+                             * of asking the engineering modeler. */
+                            var need = ids.filter(function(e2) {
+                                return e2 && !(e2 in __drwCache)
                             });
                             if (!need.length) return Promise.resolve();
                             var jobs = [];
-                            for (var i2 = 0; i2 < need.length; i2 += 20) jobs.push(need.slice(i2, i2 + 20));
+                            for (var i2 = 0; i2 < need.length; i2 += 200) jobs.push(need.slice(i2, i2 + 200));
                             return __thumbPool(jobs, 2, function(chunk) {
-                                return _.call3DSearch('flattenedtaxonomies:"types/Drawing" AND (' + chunk.map(function(p2) {
-                                    return '"' + String(p2).replace(/"/g, "") + '"'
-                                }).join(" OR ") + ")", {
-                                    label: "zen-drawcheck-drw",
-                                    nresults: 200
+                                return _.call3DSpace({
+                                    url: "/cvservlet/progressiveexpand/v2?output_format=cvjson&xrequestedwith=xmlhttprequest",
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    data: {
+                                        batch: {
+                                            expands: chunk.map(function(p2, k2) {
+                                                return {
+                                                    label: "drw" + k2,
+                                                    root: {
+                                                        physical_id: p2
+                                                    },
+                                                    filter: {
+                                                        and: {
+                                                            filters: [{
+                                                                all: 1
+                                                            }]
+                                                        }
+                                                    },
+                                                    graph: {
+                                                        descending_condition_relation: {
+                                                            uql: "((type:Drawing)) OR ((type:VPMRepInstance))"
+                                                        }
+                                                    }
+                                                }
+                                            })
+                                        },
+                                        outputs: {
+                                            select_object: ["physicalid", "type", "ds6w:label"],
+                                            select_relation: ["physicalid", "type"]
+                                        }
+                                    },
+                                    type: "json"
                                 }).then(function(d2) {
-                                    var labels = [];
-                                    (d2 && d2.results || []).forEach(function(res) {
-                                        (res.attributes || []).forEach(function(a3) {
-                                            "ds6w:label" === a3.name && a3.value && labels.push(String(a3.value).toUpperCase().replace(/\s+/g, ""))
+                                    var objs = {},
+                                        rels = [];
+                                    (d2 && d2.results || []).forEach(function(row) {
+                                        row && (row.from && row.to ? rels.push(row) : row.resourceid && (objs[row.resourceid] = row))
+                                    });
+                                    rels.forEach(function(r2) {
+                                        var tgt = objs[r2.to];
+                                        if (!tgt || "Drawing" !== tgt.type) return;
+                                        var list = __drwCache[r2.from] = __drwCache[r2.from] || [];
+                                        list.some(function(x2) {
+                                            return x2.id === r2.to
+                                        }) || list.push({
+                                            id: r2.to,
+                                            t: tgt["ds6w:label"] || r2.to
                                         })
                                     });
-                                    chunk.forEach(function(p2) {
-                                        var P2 = String(p2).toUpperCase().replace(/\s+/g, "");
-                                        __dcPnDrw[p2] = labels.some(function(L2) {
-                                            /* exact, or "<pn>" followed by a separator -
-                                             * so 1007149 does not match 10071499 */
-                                            return L2 === P2 || 0 === L2.indexOf(P2) && !/[0-9A-Z]/.test(L2.charAt(P2.length))
-                                        })
+                                    chunk.forEach(function(e3) {
+                                        e3 in __drwCache || (__drwCache[e3] = [])
                                     })
                                 }, function(e2) {
-                                    console.warn("[DrawingCheck] drawing search failed:", e2);
-                                    chunk.forEach(function(p2) {
-                                        __dcPnDrw[p2] = "err", __dcErrWhy[p2] = String(e2 && e2.message || e2)
+                                    console.warn("[Drawing] batch failed:", e2);
+                                    chunk.forEach(function(e3) {
+                                        e3 in __drwCache || (__drwCache[e3] = "err", __dcErrWhy[e3] = String(e2 && e2.message || e2))
                                     })
                                 })
+                            })
+                        },
+                        __drwMirrorNodes = function() {
+                            var walk = function(list) {
+                                (list || []).forEach(function(nd) {
+                                    if (nd && nd.resourceid && Dw.value[nd.resourceid]) {
+                                        var v2 = Dw.value[nd.resourceid];
+                                        nd._drawing = "err" === v2 ? "?" : v2.length ? v2.map(function(x2) {
+                                            return x2.t
+                                        }).join(", ") : "-"
+                                    }
+                                    nd && nd.children && nd.children.length && walk(nd.children)
+                                })
+                            };
+                            walk(s.value)
+                        },
+                        __drwCell = function(nd) {
+                            var v2 = Dw.value[nd.resourceid];
+                            if (!v2) return (0, l.Lk)("span", {
+                                style: {
+                                    color: "#9e9e9e"
+                                }
+                            }, "\u2026");
+                            if ("err" === v2) return (0, l.Lk)("span", {
+                                style: {
+                                    color: "#ef6c00",
+                                    fontWeight: "bold"
+                                },
+                                title: "Lookup failed - see console"
+                            }, "!");
+                            if (!v2.length) return (0, l.Lk)("span", {
+                                style: {
+                                    color: "#9e9e9e"
+                                }
+                            }, "\u2013");
+                            var d0 = v2[0];
+                            return (0, l.Lk)("a", {
+                                href: "#",
+                                title: "Open " + d0.t + " in 3DPlay" + (v2.length > 1 ? " (" + v2.length + " drawings on this part)" : ""),
+                                style: {
+                                    color: "#1976d2",
+                                    textDecoration: "underline",
+                                    cursor: "pointer"
+                                },
+                                onClick: function(ev) {
+                                    ev.preventDefault(), ev.stopPropagation(), _.open3DPlay(d0.id, "Drawing", d0.t)
+                                }
+                            }, d0.t + (v2.length > 1 ? " +" + (v2.length - 1) : ""))
+                        },
+                        __loadDrawing = function() {
+                            if (!a.selectedColumns || -1 === a.selectedColumns.indexOf("_drawing") || __drwBusy) return;
+                            var pids = __dcVisible().filter(function(p2) {
+                                return !(p2 in Dw.value)
+                            });
+                            if (!pids.length) return;
+                            __drwBusy = !0, __drwDone = 0, __drwTotal = pids.length, DwProg.value = {
+                                d: 0,
+                                t: __drwTotal
+                            };
+                            var done = function() {
+                                __drwFlushT && (clearTimeout(__drwFlushT), __drwFlushT = null);
+                                Dw.value = Object.assign({}, Dw.value, __drwPending), __drwPending = {};
+                                __drwMirrorNodes(), __drwBusy = !1, DwProg.value = {
+                                    d: 0,
+                                    t: 0
+                                }
+                            };
+                            ("CreateAssembly" === a.itemType ? __resolveScopes(pids) : Promise.resolve(function() {
+                                var m2 = {};
+                                return pids.forEach(function(p2) {
+                                    m2[p2] = p2
+                                }), m2
+                            }())).then(function(engOf) {
+                                var ids = [];
+                                return pids.forEach(function(p2) {
+                                    var e2 = engOf[p2];
+                                    e2 && ids.indexOf(e2) < 0 && ids.push(e2)
+                                }), __drwFetch(ids).then(function() {
+                                    pids.forEach(function(p2) {
+                                        __drwSet(p2, __drwCache[engOf[p2]] || [])
+                                    })
+                                })
+                            }).then(done, function(e2) {
+                                console.warn("[Drawing] load failed:", e2), done()
                             })
                         },
                         __dcCs = {},
@@ -2932,13 +3069,6 @@
                                         var ea = m2["dseno:EnterpriseAttributes"] || {};
                                         __dcMb[m2.id] = String(ea.make_buy || "");
                                         if (ea.Car_System) __dcCs[m2.id] = String(ea.Car_System)
-                                    });
-                                    /* ids the engineering modeler does not own - e.g.
-                                     * ElectricalGeometry harness nodes. They have no
-                                     * drw- representation; their drawing is a separate
-                                     * Drawing object named after the part number. */
-                                    (d2 && d2.nonmembers || []).forEach(function(e3) {
-                                        __dcNotEng[e3] = !0
                                     })
                                 }).catch(function(e2) {
                                     console.warn("[DrawingCheck] attr batch failed:", e2)
@@ -2946,30 +3076,6 @@
                                     chunk.forEach(function(e3) {
                                         e3 in __dcMb || (__dcMb[e3] = "")
                                     })
-                                })
-                            })
-                        },
-                        __dcHasDrawings = function(engIds) {
-                            var need = engIds.filter(function(e2) {
-                                return e2 && !(e2 in __dcDrw)
-                            });
-                            if (!need.length) return Promise.resolve();
-                            return __thumbPool(need, 6, function(eng) {
-                                return _.call3DSpace({
-                                    url: "/resources/v1/modeler/dseng/dseng:EngItem/" + eng + "/dseng:EngRepInstance?xrequestedwith=xmlhttprequest",
-                                    method: "GET",
-                                    headers: {
-                                        Accept: "application/json"
-                                    },
-                                    type: "json"
-                                }).then(function(d2) {
-                                    var has = (d2 && d2.member || []).some(function(m2) {
-                                        return /^drw-/i.test(String(m2.name || ""))
-                                    });
-                                    __dcDrw[eng] = has
-                                }).catch(function(e2) {
-                                    console.warn("[DrawingCheck] rep lookup failed:", eng, e2);
-                                    __dcDrw[eng] = null
                                 })
                             })
                         },
@@ -2984,20 +3090,11 @@
                                     (list || []).forEach(function(nd) {
                                         if (!nd || !nd.resourceid) return;
                                         out.push(nd.resourceid);
-                                        __dcPnOf[nd.resourceid] = String(nd["ds6wg:EnterpriseExtension.V_PartNumber"] || "").trim();
                                         if (nd.expanded && nd.children && nd.children.length) walk(nd.children)
                                     })
                                 };
                             walk(s.value);
                             return out
-                        },
-                        __dcStatus = function(eng) {
-                            if (!eng) return "na";
-                            if ("phantom" === String(__dcMb[eng] || "").toLowerCase()) return "na";
-                            var cs = String(__dcCs[eng] || "");
-                            if ("100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) return "na";
-                            var hd = __dcDrw[eng];
-                            return "err" === hd ? "err" : null == hd ? "na" : hd ? "yes" : "no"
                         },
                         __dcSet = function(pid, st) {
                             /* incremental: buffer and flush ~5x/sec so cells fill in
@@ -3029,48 +3126,6 @@
                                     })
                                 };
                             walk(s.value)
-                        },
-                        __dcDrawOne = function(eng, retry) {
-                            /* one EngRepInstance call with a 20 s timeout so a single
-                             * stuck request can never block the column. A failed or
-                             * timed-out lookup is recorded as "err", NOT as null:
-                             * null used to render as the grey "-" of the business rule
-                             * (standard part / tooling / phantom), which hid real
-                             * errors behind a legitimate-looking value. */
-                            if (eng in __dcDrw) return Promise.resolve();
-                            var fail = function(why) {
-                                    if (retry) return __dcDrw[eng] = "err", void(__dcErrWhy[eng] = why);
-                                    return new Promise(function(res) {
-                                        setTimeout(res, 1500)
-                                    }).then(function() {
-                                        return __dcDrawOne(eng, !0)
-                                    })
-                                },
-                                call = _.call3DSpace({
-                                    url: "/resources/v1/modeler/dseng/dseng:EngItem/" + eng + "/dseng:EngRepInstance?xrequestedwith=xmlhttprequest",
-                                    method: "GET",
-                                    headers: {
-                                        Accept: "application/json"
-                                    },
-                                    type: "json"
-                                }),
-                                timeout = new Promise(function(res) {
-                                    setTimeout(function() {
-                                        res("__t__")
-                                    }, 20000)
-                                });
-                            return Promise.race([call, timeout]).then(function(d2) {
-                                if ("__t__" === d2) return fail("timeout after 20 s");
-                                __dcDrw[eng] = (d2 && d2.member || []).some(function(m2) {
-                                    return /^drw-/i.test(String(m2.name || ""))
-                                })
-                            }, function(e2) {
-                                return fail(function(e3) {
-                                    if (!e3) return "unknown error";
-                                    var st = e3.status || e3.statusCode || e3.errorCode || (e3.response && e3.response.status);
-                                    return (st ? "HTTP " + st + " " : "") + String(e3.message || e3.statusText || e3)
-                                }(e2))
-                            })
                         },
                         __loadDrawingCheck = function() {
                             if (!a.selectedColumns || -1 === a.selectedColumns.indexOf("_drawingcheck") || __dcBusy) return;
@@ -3131,44 +3186,28 @@
                                 });
                                 return __dcEngAttrs(engIds).then(function() {
                                     /* parts already 'na' (phantom / standard / tooling / no eng)
-                                     * need no drawing call — fill them right away. */
-                                    var needEng = [],
-                                        needPn = [];
+                                     * need no drawing lookup at all. */
+                                    var needEng = [];
                                     pids.forEach(function(p2) {
                                         var eng = engOf[p2];
                                         if (!eng) return __dcSet(p2, "na");
-                                        if (__dcNotEng[eng]) {
-                                            /* electrical geometry & friends: check by part
-                                             * number; nothing to check without one */
-                                            var pn = __dcPnOf[p2] || "";
-                                            if (!pn) return __dcSet(p2, "na");
-                                            return void(needPn.indexOf(pn) < 0 && needPn.push(pn))
-                                        }
+                                        __dcEngOf[p2] = eng;
                                         var mb = String(__dcMb[eng] || "").toLowerCase(),
                                             cs = String(__dcCs[eng] || "");
                                         if ("phantom" === mb || "100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) return __dcSet(p2, "na");
                                         if (needEng.indexOf(eng) < 0) needEng.push(eng)
                                     });
-                                    var byPn = __dcDrwByPn(needPn).then(function() {
+                                    /* same source as the Drawing column, so the two can
+                                     * never disagree */
+                                    return __drwFetch(needEng).then(function() {
                                         pids.forEach(function(p2) {
                                             if (p2 in Dc.value) return;
                                             var eng = engOf[p2];
-                                            if (!eng || !__dcNotEng[eng]) return;
-                                            var v2 = __dcPnDrw[__dcPnOf[p2]];
-                                            "err" === v2 && (__dcErrWhy[eng] = __dcErrWhy[__dcPnOf[p2]]), __dcSet(p2, "err" === v2 ? "err" : v2 ? "yes" : "no")
+                                            if (!eng) return;
+                                            var v2 = __drwCache[eng];
+                                            __dcSet(p2, "err" === v2 ? "err" : v2 && v2.length ? "yes" : "no")
                                         })
-                                    });
-                                    /* the rest: per-eng drawing lookup, applied incrementally */
-                                    pids.forEach(function(p2) {
-                                        __dcEngOf[p2] = engOf[p2] || ""
-                                    });
-                                    return Promise.all([byPn, __thumbPool(needEng, 6, function(eng) {
-                                        return __dcDrawOne(eng).then(function() {
-                                            pids.forEach(function(p2) {
-                                                if (engOf[p2] === eng && !(p2 in Dc.value)) __dcSet(p2, __dcStatus(eng))
-                                            })
-                                        })
-                                    })])
+                                    })
                                 })
                             }).then(done, function(e2) {
                                 console.warn("[DrawingCheck] load failed:", e2), done()
@@ -3193,7 +3232,7 @@
                         __wtTotal = 0,
                         __colStatus = function(key) {
                             /* small "loading n/m" line under the column header */
-                            var p2 = "_drawingcheck" === key ? DcProg.value : "_weight" === key ? WtProg.value : null;
+                            var p2 = "_drawingcheck" === key ? DcProg.value : "_weight" === key ? WtProg.value : "_drawing" === key ? DwProg.value : null;
                             if (!p2 || !p2.t) return "";
                             return '<div style="font-size:10px;font-weight:500;opacity:.85;line-height:1.2">loading ' + p2.d + "/" + p2.t + "</div>"
                         },
@@ -3453,7 +3492,7 @@
                     (0, l.wB)(function() {
                         return [s.value, a.selectedColumns]
                     }, function() {
-                        __loadThumbs(), __loadMaterials(), __loadDrawingCheck(), __loadWeight()
+                        __loadThumbs(), __loadMaterials(), __loadDrawingCheck(), __loadWeight(), __loadDrawing()
                     }, {
                         immediate: !0
                     });
@@ -4223,7 +4262,9 @@
                                         return [(0, l.eW)((0, i.v_)(lt(n[t.key])), 1)]
                                     }),
                                     _: 2
-                                }, 1032, ["color"])])], 2112)) : "_weight" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                }, 1032, ["color"])])], 2112)) : "_drawing" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                    key: 14
+                                }, [(0, l.Q3)(" Drawing "), __drwCell(n)], 2112)) : "_weight" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 13
                                 }, [(0, l.Q3)(" Weight "), (0, l.Lk)("span", {
                                     style: (0, i.Tr)({
@@ -5397,27 +5438,32 @@
                             key: "_thumbnail",
                             label: "Thumbnail",
                             required: !1,
-                            category: "ootb"
+                            category: "ebom_custom"
                         }, {
                             key: "_coreMaterial",
                             label: "Core Material",
                             required: !1,
-                            category: "ootb"
+                            category: "ebom_custom"
                         }, {
                             key: "_coveringMaterial",
                             label: "Covering Material",
                             required: !1,
-                            category: "ootb"
+                            category: "ebom_custom"
                         }, {
                             key: "_drawingcheck",
                             label: "Drawing Check",
                             required: !1,
-                            category: "ootb"
+                            category: "ebom_custom"
+                        }, {
+                            key: "_drawing",
+                            label: "Drawing",
+                            required: !1,
+                            category: "ebom_custom"
                         }, {
                             key: "_weight",
                             label: "Weight",
                             required: !1,
-                            category: "ootb"
+                            category: "ebom_custom"
                         }, {
                             key: "name",
                             label: "Name",
@@ -6387,7 +6433,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.13"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.14"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
