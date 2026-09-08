@@ -600,6 +600,44 @@
                             console.error(e), a(e)
                         })
                     })
+                },
+                call3DSearch: function(query, opts) {
+                    /* Federated Search runs on its own service host. The compass
+                     * normally hands it out as "3DSearch"; if it does not, derive
+                     * it from the 3DSpace url (...-space... -> ...-fedsearch...). */
+                    var t = m.getCurrentTenant(),
+                        base = "";
+                    try {
+                        base = m.getUrlForTenantAndService(t, "3DSearch") || ""
+                    } catch (e) {}
+                    if (!base) {
+                        var sp = "";
+                        try {
+                            sp = m.getUrlForTenantAndService(t, "3DSpace") || ""
+                        } catch (e) {}
+                        base = sp ? sp.split("/enovia")[0].replace("-space", "-fedsearch") : ""
+                    }
+                    if (!base) return Promise.reject(new Error("no search service url for tenant " + t));
+                    return m.callWebService({
+                        method: "POST",
+                        url: base + "/federated/search?xrequestedwith=xmlhttprequest",
+                        headers: {
+                            "Content-Type": "application/json",
+                            SecurityContext: L || ""
+                        },
+                        data: {
+                            label: (opts && opts.label) || "zen-search",
+                            query: query,
+                            start: "0",
+                            nresults: (opts && opts.nresults) || 100,
+                            tenant: t,
+                            with_indexing_date: !1,
+                            select_predicate: (opts && opts.select) || ["physicalid", "ds6w:label", "ds6w:identifier"]
+                        },
+                        type: "json"
+                    }).then(function(r2) {
+                        return r2 && r2.body || {}
+                    })
                 }
             };
             void 0 === widget.getPreference(w) && widget.addPreference({
@@ -966,7 +1004,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.12 (Car System no longer overwritten by empty fallback)");
+            console.log("[BOMWidget] 513 build v1.4.13 (drawing check for electrical items; 6wtag fallback dropped)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2830,6 +2868,47 @@
                         __dcDrw = {},
                         __dcErrWhy = {},
                         __dcEngOf = {},
+                        __dcNotEng = {},
+                        __dcPnOf = {},
+                        __dcPnDrw = {},
+                        __dcDrwByPn = function(pns) {
+                            /* Drawing objects are named "<part number>-<title>", so one
+                             * OR-batched Federated Search covers a whole page of rows. */
+                            var need = pns.filter(function(p2) {
+                                return p2 && !(p2 in __dcPnDrw)
+                            });
+                            if (!need.length) return Promise.resolve();
+                            var jobs = [];
+                            for (var i2 = 0; i2 < need.length; i2 += 20) jobs.push(need.slice(i2, i2 + 20));
+                            return __thumbPool(jobs, 2, function(chunk) {
+                                return _.call3DSearch('flattenedtaxonomies:"types/Drawing" AND (' + chunk.map(function(p2) {
+                                    return '"' + String(p2).replace(/"/g, "") + '"'
+                                }).join(" OR ") + ")", {
+                                    label: "zen-drawcheck-drw",
+                                    nresults: 200
+                                }).then(function(d2) {
+                                    var labels = [];
+                                    (d2 && d2.results || []).forEach(function(res) {
+                                        (res.attributes || []).forEach(function(a3) {
+                                            "ds6w:label" === a3.name && a3.value && labels.push(String(a3.value).toUpperCase().replace(/\s+/g, ""))
+                                        })
+                                    });
+                                    chunk.forEach(function(p2) {
+                                        var P2 = String(p2).toUpperCase().replace(/\s+/g, "");
+                                        __dcPnDrw[p2] = labels.some(function(L2) {
+                                            /* exact, or "<pn>" followed by a separator -
+                                             * so 1007149 does not match 10071499 */
+                                            return L2 === P2 || 0 === L2.indexOf(P2) && !/[0-9A-Z]/.test(L2.charAt(P2.length))
+                                        })
+                                    })
+                                }, function(e2) {
+                                    console.warn("[DrawingCheck] drawing search failed:", e2);
+                                    chunk.forEach(function(p2) {
+                                        __dcPnDrw[p2] = "err", __dcErrWhy[p2] = String(e2 && e2.message || e2)
+                                    })
+                                })
+                            })
+                        },
                         __dcCs = {},
                         __dcMb = {},
                         __dcEngAttrs = function(engIds) {
@@ -2853,54 +2932,19 @@
                                         var ea = m2["dseno:EnterpriseAttributes"] || {};
                                         __dcMb[m2.id] = String(ea.make_buy || "");
                                         if (ea.Car_System) __dcCs[m2.id] = String(ea.Car_System)
+                                    });
+                                    /* ids the engineering modeler does not own - e.g.
+                                     * ElectricalGeometry harness nodes. They have no
+                                     * drw- representation; their drawing is a separate
+                                     * Drawing object named after the part number. */
+                                    (d2 && d2.nonmembers || []).forEach(function(e3) {
+                                        __dcNotEng[e3] = !0
                                     })
                                 }).catch(function(e2) {
                                     console.warn("[DrawingCheck] attr batch failed:", e2)
                                 }).then(function() {
                                     chunk.forEach(function(e3) {
                                         e3 in __dcMb || (__dcMb[e3] = "")
-                                    })
-                                })
-                            })
-                        },
-                        __dcCarSystem = function(engIds) {
-                            var need = engIds.filter(function(e2) {
-                                return !(e2 in __dcCs)
-                            });
-                            if (!need.length) return Promise.resolve();
-                            var jobs = [];
-                            for (var i2 = 0; i2 < need.length; i2 += 200) jobs.push(need.slice(i2, i2 + 200));
-                            return __thumbPool(jobs, 2, function(chunk) {
-                                return _.call3DSpace({
-                                    url: "/cvservlet/fetch/v2?xrequestedwith=xmlhttprequest",
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json"
-                                    },
-                                    data: {
-                                        label: "zen-drawcheck-cs",
-                                        physicalid: chunk,
-                                        select_predicate: ["physicalid", "ds6w:browsingStructure1"],
-                                        locale: "us",
-                                        lang: "en",
-                                        with_synthesis_attribute: !1
-                                    },
-                                    type: "json"
-                                }).then(function(d2) {
-                                    (d2 && d2.results || []).forEach(function(res) {
-                                        var pid = "",
-                                            cs = "";
-                                        (res.attributes || []).forEach(function(a3) {
-                                            if ("physicalid" === a3.name) pid = a3.value;
-                                            else if ("ds6w:browsingStructure1" === a3.name) cs = a3.value || ""
-                                        });
-                                        if (pid && (cs || !__dcCs[pid])) __dcCs[pid] = cs
-                                    })
-                                }).catch(function(e2) {
-                                    console.warn("[DrawingCheck] carsystem batch failed:", e2)
-                                }).then(function() {
-                                    chunk.forEach(function(e3) {
-                                        e3 in __dcCs || (__dcCs[e3] = "")
                                     })
                                 })
                             })
@@ -2940,6 +2984,7 @@
                                     (list || []).forEach(function(nd) {
                                         if (!nd || !nd.resourceid) return;
                                         out.push(nd.resourceid);
+                                        __dcPnOf[nd.resourceid] = String(nd["ds6wg:EnterpriseExtension.V_PartNumber"] || "").trim();
                                         if (nd.expanded && nd.children && nd.children.length) walk(nd.children)
                                     })
                                 };
@@ -2957,6 +3002,7 @@
                         __dcSet = function(pid, st) {
                             /* incremental: buffer and flush ~5x/sec so cells fill in
                              * progressively instead of all-at-once (no freeze). */
+                            if (pid in __dcPending || pid in Dc.value) return;
                             __dcPending[pid] = st;
                             __dcDone++;
                             if (!__dcFlushT) __dcFlushT = setTimeout(function() {
@@ -3083,34 +3129,46 @@
                                     var e2 = engOf[p2];
                                     if (e2 && engIds.indexOf(e2) < 0) engIds.push(e2)
                                 });
-                                /* dseno:EnterpriseAttributes.Car_System is authoritative and must
-                                 * land before the ds6w:browsingStructure1 fallback runs; in parallel
-                                 * the fallback's empty answers could overwrite it. */
                                 return __dcEngAttrs(engIds).then(function() {
-                                    return __dcCarSystem(engIds)
-                                }).then(function() {
                                     /* parts already 'na' (phantom / standard / tooling / no eng)
                                      * need no drawing call — fill them right away. */
-                                    var needEng = [];
+                                    var needEng = [],
+                                        needPn = [];
                                     pids.forEach(function(p2) {
                                         var eng = engOf[p2];
                                         if (!eng) return __dcSet(p2, "na");
+                                        if (__dcNotEng[eng]) {
+                                            /* electrical geometry & friends: check by part
+                                             * number; nothing to check without one */
+                                            var pn = __dcPnOf[p2] || "";
+                                            if (!pn) return __dcSet(p2, "na");
+                                            return void(needPn.indexOf(pn) < 0 && needPn.push(pn))
+                                        }
                                         var mb = String(__dcMb[eng] || "").toLowerCase(),
                                             cs = String(__dcCs[eng] || "");
                                         if ("phantom" === mb || "100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) return __dcSet(p2, "na");
                                         if (needEng.indexOf(eng) < 0) needEng.push(eng)
                                     });
+                                    var byPn = __dcDrwByPn(needPn).then(function() {
+                                        pids.forEach(function(p2) {
+                                            if (p2 in Dc.value) return;
+                                            var eng = engOf[p2];
+                                            if (!eng || !__dcNotEng[eng]) return;
+                                            var v2 = __dcPnDrw[__dcPnOf[p2]];
+                                            "err" === v2 && (__dcErrWhy[eng] = __dcErrWhy[__dcPnOf[p2]]), __dcSet(p2, "err" === v2 ? "err" : v2 ? "yes" : "no")
+                                        })
+                                    });
                                     /* the rest: per-eng drawing lookup, applied incrementally */
                                     pids.forEach(function(p2) {
                                         __dcEngOf[p2] = engOf[p2] || ""
                                     });
-                                    return __thumbPool(needEng, 6, function(eng) {
+                                    return Promise.all([byPn, __thumbPool(needEng, 6, function(eng) {
                                         return __dcDrawOne(eng).then(function() {
                                             pids.forEach(function(p2) {
                                                 if (engOf[p2] === eng && !(p2 in Dc.value)) __dcSet(p2, __dcStatus(eng))
                                             })
                                         })
-                                    })
+                                    })])
                                 })
                             }).then(done, function(e2) {
                                 console.warn("[DrawingCheck] load failed:", e2), done()
@@ -3140,6 +3198,7 @@
                             return '<div style="font-size:10px;font-weight:500;opacity:.85;line-height:1.2">loading ' + p2.d + "/" + p2.t + "</div>"
                         },
                         __wtSet = function(pid, val) {
+                            if (pid in __wtPending || pid in Wt.value) return;
                             __wtPending[pid] = val;
                             __wtDone++;
                             if (!__wtFlushT) __wtFlushT = setTimeout(function() {
@@ -6328,7 +6387,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.12"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.13"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
