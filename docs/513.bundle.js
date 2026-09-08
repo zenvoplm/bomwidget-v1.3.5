@@ -627,10 +627,14 @@
             });
             const _ = P;
             window.__zenErpApi = P;
-            /* Robust download: FileSaver revokes the blob URL after ~40 s, which
-             * kills a large (image-embedded) xlsx while Chrome's Safe Browsing
-             * scan is still finishing — the download stalls at "x/x MB, 0 B/s".
-             * This saver revokes only after 10 minutes, well past that scan. */
+            /* Download from a 3DDashboard widget iframe.
+             * Small files (plain xlsx) download fine via an in-iframe <a download>.
+             * A large image-embedded xlsx (~2 MB) stalls at "x/x MB, 0 B/s" because
+             * Chrome's download scan never finalises a big blob delivered inside the
+             * dashboard's widget iframe. For that case the caller pre-opens a
+             * top-level tab (window.__zenDlTab) during the click gesture; navigating
+             * that tab to the blob performs the download in a top-level context,
+             * which is not subject to the iframe stall. */
             window.__zenSaveBlob = function(blob, name) {
                 try {
                     if (window.navigator && window.navigator.msSaveOrOpenBlob) {
@@ -638,7 +642,25 @@
                         return
                     }
                     var url = URL.createObjectURL(blob),
-                        a2 = document.createElement("a");
+                        dlTab = window.__zenDlTab;
+                    window.__zenDlTab = null;
+                    if (dlTab && !dlTab.closed) {
+                        try {
+                            dlTab.location.href = url;
+                            setTimeout(function() {
+                                try {
+                                    URL.revokeObjectURL(url)
+                                } catch (e) {}
+                                try {
+                                    dlTab.close()
+                                } catch (e) {}
+                            }, 120000);
+                            return
+                        } catch (e) {
+                            /* fall through to the in-iframe anchor path */
+                        }
+                    }
+                    var a2 = document.createElement("a");
                     a2.href = url;
                     a2.download = name || "download";
                     a2.rel = "noopener";
@@ -967,7 +989,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.8 (drawing-check incremental)");
+            console.log("[BOMWidget] 513 build v1.4.9 (image-export top-level download)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -3206,7 +3228,17 @@
                         st = function() {
                             if (Hn.value.some(function(e2) {
                                     return "_thumbnail" === e2.key
-                                })) return void __bomExportThumbExcel();
+                                })) {
+                                /* open the download tab now, inside the click gesture,
+                                 * so it is not popup-blocked; the async image export
+                                 * fills it in when the blob is ready. */
+                                try {
+                                    window.__zenDlTab = window.open("", "_blank")
+                                } catch (e) {
+                                    window.__zenDlTab = null
+                                }
+                                return void __bomExportThumbExcel()
+                            }
                             var e, n = ut(),
                                 t = ["Level", "Title"].concat(J(Hn.value.map(function(e) {
                                     return e.label
@@ -6088,7 +6120,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.8"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.9"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
