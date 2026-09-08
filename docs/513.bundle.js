@@ -967,7 +967,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.6 (erp-sync, rebased on v1.3.9)");
+            console.log("[BOMWidget] 513 build v1.4.8 (drawing-check incremental)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2224,7 +2224,7 @@
                                 }
                                 return !1
                             };
-                            n(s.value)
+                            n(s.value), __loadDrawingCheck && __loadDrawingCheck()
                         },
                         Gn = function() {
                             var e = ue(le().m(function e() {
@@ -2281,7 +2281,7 @@
                                                 return setTimeout(e, 200)
                                             });
                                         case 5:
-                                            V.value = !1, Cn.value = 0, Ln.value = 0;
+                                            V.value = !1, Cn.value = 0, Ln.value = 0, __loadDrawingCheck && __loadDrawingCheck();
                                         case 6:
                                             return e.a(2)
                                     }
@@ -2927,19 +2927,92 @@
                                 })
                             })
                         },
+                        __dcPending = {},
+                        __dcFlushT = null,
+                        __dcVisible = function() {
+                            /* Only rows currently shown: a node plus its descendants
+                             * whose ancestors are all expanded (option a). Expanding
+                             * more rows re-triggers this via Nn / expand-all. */
+                            var out = [],
+                                walk = function(list) {
+                                    (list || []).forEach(function(nd) {
+                                        if (!nd || !nd.resourceid) return;
+                                        out.push(nd.resourceid);
+                                        if (nd.expanded && nd.children && nd.children.length) walk(nd.children)
+                                    })
+                                };
+                            walk(s.value);
+                            return out
+                        },
+                        __dcStatus = function(eng) {
+                            if (!eng) return "na";
+                            if ("phantom" === String(__dcMb[eng] || "").toLowerCase()) return "na";
+                            var cs = String(__dcCs[eng] || "");
+                            if ("100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) return "na";
+                            var hd = __dcDrw[eng];
+                            return null == hd ? "na" : hd ? "yes" : "no"
+                        },
+                        __dcSet = function(pid, st) {
+                            /* incremental: buffer and flush ~5x/sec so cells fill in
+                             * progressively instead of all-at-once (no freeze). */
+                            __dcPending[pid] = st;
+                            if (!__dcFlushT) __dcFlushT = setTimeout(function() {
+                                Dc.value = Object.assign({}, Dc.value, __dcPending);
+                                __dcPending = {}, __dcFlushT = null
+                            }, 200)
+                        },
+                        __dcMirrorNodes = function() {
+                            /* one pass at the end so Excel / print exports carry it */
+                            var g = {
+                                    yes: "Yes",
+                                    no: "No",
+                                    na: "-"
+                                },
+                                walk = function(list) {
+                                    (list || []).forEach(function(nd) {
+                                        if (nd && nd.resourceid && nd.resourceid in Dc.value) nd._drawingcheck = g[Dc.value[nd.resourceid]] || "";
+                                        nd && nd.children && nd.children.length && walk(nd.children)
+                                    })
+                                };
+                            walk(s.value)
+                        },
+                        __dcDrawOne = function(eng) {
+                            /* one EngRepInstance call with a 20 s timeout so a single
+                             * stuck request can never block the column. */
+                            if (eng in __dcDrw) return Promise.resolve();
+                            var call = _.call3DSpace({
+                                    url: "/resources/v1/modeler/dseng/dseng:EngItem/" + eng + "/dseng:EngRepInstance?xrequestedwith=xmlhttprequest",
+                                    method: "GET",
+                                    headers: {
+                                        Accept: "application/json"
+                                    },
+                                    type: "json"
+                                }),
+                                timeout = new Promise(function(res) {
+                                    setTimeout(function() {
+                                        res("__t__")
+                                    }, 20000)
+                                });
+                            return Promise.race([call, timeout]).then(function(d2) {
+                                __dcDrw[eng] = "__t__" === d2 ? null : (d2 && d2.member || []).some(function(m2) {
+                                    return /^drw-/i.test(String(m2.name || ""))
+                                })
+                            }).catch(function() {
+                                __dcDrw[eng] = null
+                            })
+                        },
                         __loadDrawingCheck = function() {
                             if (!a.selectedColumns || -1 === a.selectedColumns.indexOf("_drawingcheck") || __dcBusy) return;
-                            var pids = __collectThumbPids().filter(function(p2) {
+                            var pids = __dcVisible().filter(function(p2) {
                                 return !(p2 in Dc.value)
                             });
                             if (!pids.length) return;
                             __dcBusy = !0;
                             var done = function() {
-                                __dcBusy = !1
+                                __dcMirrorNodes(), __dcBusy = !1
                             };
                             /* MBOM node ids are mfg items -> resolve to their scope EngItem;
-                             * EBOM node ids are EngItems already. Car System / Make Buy /
-                             * drawings all live on the EngItem. */
+                             * EBOM node ids are EngItems already. */
                             var mapEng = "CreateAssembly" === a.itemType ? __resolveScopes(pids) : Promise.resolve((function() {
                                 var m2 = {};
                                 pids.forEach(function(p2) {
@@ -2953,37 +3026,26 @@
                                     var e2 = engOf[p2];
                                     if (e2 && engIds.indexOf(e2) < 0) engIds.push(e2)
                                 });
-                                return Promise.all([__dcEngAttrs(engIds), __dcCarSystem(engIds), __dcHasDrawings(engIds)]).then(function() {
-                                    var upd = {};
+                                return Promise.all([__dcEngAttrs(engIds), __dcCarSystem(engIds)]).then(function() {
+                                    /* parts already 'na' (phantom / standard / tooling / no eng)
+                                     * need no drawing call — fill them right away. */
+                                    var needEng = [];
                                     pids.forEach(function(p2) {
-                                        var eng = engOf[p2],
-                                            st;
-                                        if (!eng) st = "na";
-                                        else if ("phantom" === String(__dcMb[eng] || "").toLowerCase()) st = "na";
-                                        else {
-                                            var cs = String(__dcCs[eng] || "");
-                                            if ("100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) st = "na";
-                                            else {
-                                                var hd = __dcDrw[eng];
-                                                st = null == hd ? "na" : hd ? "yes" : "no"
-                                            }
-                                        }
-                                        upd[p2] = st
+                                        var eng = engOf[p2];
+                                        if (!eng) return __dcSet(p2, "na");
+                                        var mb = String(__dcMb[eng] || "").toLowerCase(),
+                                            cs = String(__dcCs[eng] || "");
+                                        if ("phantom" === mb || "100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) return __dcSet(p2, "na");
+                                        if (needEng.indexOf(eng) < 0) needEng.push(eng)
                                     });
-                                    Dc.value = Object.assign({}, Dc.value, upd);
-                                    /* mirror onto nodes so Excel / print exports carry it too */
-                                    var glyph = {
-                                            yes: "Yes",
-                                            no: "No",
-                                            na: "-"
-                                        },
-                                        walk = function(list) {
-                                            (list || []).forEach(function(nd) {
-                                                if (nd && nd.resourceid && nd.resourceid in upd) nd._drawingcheck = glyph[upd[nd.resourceid]] || "";
-                                                nd && nd.children && nd.children.length && walk(nd.children)
+                                    /* the rest: per-eng drawing lookup, applied incrementally */
+                                    return __thumbPool(needEng, 6, function(eng) {
+                                        return __dcDrawOne(eng).then(function() {
+                                            pids.forEach(function(p2) {
+                                                if (engOf[p2] === eng && !(p2 in Dc.value)) __dcSet(p2, __dcStatus(eng))
                                             })
-                                        };
-                                    walk(s.value)
+                                        })
+                                    })
                                 })
                             }).then(done, function(e2) {
                                 console.warn("[DrawingCheck] load failed:", e2), done()
@@ -6026,7 +6088,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.7"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.8"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
