@@ -627,6 +627,36 @@
             });
             const _ = P;
             window.__zenErpApi = P;
+            /* Robust download: FileSaver revokes the blob URL after ~40 s, which
+             * kills a large (image-embedded) xlsx while Chrome's Safe Browsing
+             * scan is still finishing — the download stalls at "x/x MB, 0 B/s".
+             * This saver revokes only after 10 minutes, well past that scan. */
+            window.__zenSaveBlob = function(blob, name) {
+                try {
+                    if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+                        window.navigator.msSaveOrOpenBlob(blob, name);
+                        return
+                    }
+                    var url = URL.createObjectURL(blob),
+                        a2 = document.createElement("a");
+                    a2.href = url;
+                    a2.download = name || "download";
+                    a2.rel = "noopener";
+                    a2.style.display = "none";
+                    document.body.appendChild(a2);
+                    a2.click();
+                    setTimeout(function() {
+                        try {
+                            document.body.removeChild(a2)
+                        } catch (e) {}
+                        try {
+                            URL.revokeObjectURL(url)
+                        } catch (e) {}
+                    }, 600000)
+                } catch (e) {
+                    console.error("[zen-save] download failed", e)
+                }
+            };
             window.__zenErpSetRoot = function(rootId, itemType) {
                 try {
                     window.__zenErpRoot = rootId ? {
@@ -1139,7 +1169,7 @@
                             name: "xl/media/image" + (n2 + 1) + "." + (e2.ext || "png"),
                             data: e2.bytes
                         })
-                    })), (0, T.saveAs)(new Blob([__bomZip(g)], {
+                    })), window.__zenSaveBlob(new Blob([__bomZip(g)], {
                         type: "application/octet-stream"
                     }), e.fileName)
                 };
@@ -2051,7 +2081,8 @@
                                         _parentProduct: "Parent Product",
                                         _thumbnail: "Thumbnail",
                                         _coreMaterial: "Core Material",
-                                        _coveringMaterial: "Covering Material"
+                                        _coveringMaterial: "Covering Material",
+                                        _drawingcheck: "Drawing Check"
                                     } [e] || e.split(":").pop()
                                 }
                             })
@@ -2794,6 +2825,170 @@
                                 }
                             }
                         },
+                        Dc = (0, c.KR)({}),
+                        __dcBusy = !1,
+                        __dcDrw = {},
+                        __dcCs = {},
+                        __dcMb = {},
+                        __dcEngAttrs = function(engIds) {
+                            var need = engIds.filter(function(e2) {
+                                return !(e2 in __dcMb)
+                            });
+                            if (!need.length) return Promise.resolve();
+                            var jobs = [];
+                            for (var i2 = 0; i2 < need.length; i2 += 50) jobs.push(need.slice(i2, i2 + 50));
+                            return __thumbPool(jobs, 3, function(chunk) {
+                                return _.call3DSpace({
+                                    url: "/resources/v1/modeler/dseng/dseng:EngItem/bulkfetch?xrequestedwith=xmlhttprequest&$mask=dsmveng:EngItemMask.Details",
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    data: chunk,
+                                    type: "json"
+                                }).then(function(d2) {
+                                    (d2 && d2.member || []).forEach(function(m2) {
+                                        var ea = m2["dseno:EnterpriseAttributes"] || {};
+                                        __dcMb[m2.id] = String(ea.make_buy || "");
+                                        if (ea.Car_System) __dcCs[m2.id] = String(ea.Car_System)
+                                    })
+                                }).catch(function(e2) {
+                                    console.warn("[DrawingCheck] attr batch failed:", e2)
+                                }).then(function() {
+                                    chunk.forEach(function(e3) {
+                                        e3 in __dcMb || (__dcMb[e3] = "")
+                                    })
+                                })
+                            })
+                        },
+                        __dcCarSystem = function(engIds) {
+                            var need = engIds.filter(function(e2) {
+                                return !(e2 in __dcCs)
+                            });
+                            if (!need.length) return Promise.resolve();
+                            var jobs = [];
+                            for (var i2 = 0; i2 < need.length; i2 += 200) jobs.push(need.slice(i2, i2 + 200));
+                            return __thumbPool(jobs, 2, function(chunk) {
+                                return _.call3DSpace({
+                                    url: "/cvservlet/fetch/v2?xrequestedwith=xmlhttprequest",
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    data: {
+                                        label: "zen-drawcheck-cs",
+                                        physicalid: chunk,
+                                        select_predicate: ["physicalid", "ds6w:browsingStructure1"],
+                                        locale: "us",
+                                        lang: "en",
+                                        with_synthesis_attribute: !1
+                                    },
+                                    type: "json"
+                                }).then(function(d2) {
+                                    (d2 && d2.results || []).forEach(function(res) {
+                                        var pid = "",
+                                            cs = "";
+                                        (res.attributes || []).forEach(function(a3) {
+                                            if ("physicalid" === a3.name) pid = a3.value;
+                                            else if ("ds6w:browsingStructure1" === a3.name) cs = a3.value || ""
+                                        });
+                                        if (pid) __dcCs[pid] = cs
+                                    })
+                                }).catch(function(e2) {
+                                    console.warn("[DrawingCheck] carsystem batch failed:", e2)
+                                }).then(function() {
+                                    chunk.forEach(function(e3) {
+                                        e3 in __dcCs || (__dcCs[e3] = "")
+                                    })
+                                })
+                            })
+                        },
+                        __dcHasDrawings = function(engIds) {
+                            var need = engIds.filter(function(e2) {
+                                return e2 && !(e2 in __dcDrw)
+                            });
+                            if (!need.length) return Promise.resolve();
+                            return __thumbPool(need, 6, function(eng) {
+                                return _.call3DSpace({
+                                    url: "/resources/v1/modeler/dseng/dseng:EngItem/" + eng + "/dseng:EngRepInstance?xrequestedwith=xmlhttprequest",
+                                    method: "GET",
+                                    headers: {
+                                        Accept: "application/json"
+                                    },
+                                    type: "json"
+                                }).then(function(d2) {
+                                    var has = (d2 && d2.member || []).some(function(m2) {
+                                        return /^drw-/i.test(String(m2.name || ""))
+                                    });
+                                    __dcDrw[eng] = has
+                                }).catch(function(e2) {
+                                    console.warn("[DrawingCheck] rep lookup failed:", eng, e2);
+                                    __dcDrw[eng] = null
+                                })
+                            })
+                        },
+                        __loadDrawingCheck = function() {
+                            if (!a.selectedColumns || -1 === a.selectedColumns.indexOf("_drawingcheck") || __dcBusy) return;
+                            var pids = __collectThumbPids().filter(function(p2) {
+                                return !(p2 in Dc.value)
+                            });
+                            if (!pids.length) return;
+                            __dcBusy = !0;
+                            var done = function() {
+                                __dcBusy = !1
+                            };
+                            /* MBOM node ids are mfg items -> resolve to their scope EngItem;
+                             * EBOM node ids are EngItems already. Car System / Make Buy /
+                             * drawings all live on the EngItem. */
+                            var mapEng = "CreateAssembly" === a.itemType ? __resolveScopes(pids) : Promise.resolve((function() {
+                                var m2 = {};
+                                pids.forEach(function(p2) {
+                                    m2[p2] = p2
+                                });
+                                return m2
+                            })());
+                            mapEng.then(function(engOf) {
+                                var engIds = [];
+                                pids.forEach(function(p2) {
+                                    var e2 = engOf[p2];
+                                    if (e2 && engIds.indexOf(e2) < 0) engIds.push(e2)
+                                });
+                                return Promise.all([__dcEngAttrs(engIds), __dcCarSystem(engIds), __dcHasDrawings(engIds)]).then(function() {
+                                    var upd = {};
+                                    pids.forEach(function(p2) {
+                                        var eng = engOf[p2],
+                                            st;
+                                        if (!eng) st = "na";
+                                        else if ("phantom" === String(__dcMb[eng] || "").toLowerCase()) st = "na";
+                                        else {
+                                            var cs = String(__dcCs[eng] || "");
+                                            if ("100_STANDARD_PARTS" === cs || "000_PRODUCTION_TOOLS" === cs) st = "na";
+                                            else {
+                                                var hd = __dcDrw[eng];
+                                                st = null == hd ? "na" : hd ? "yes" : "no"
+                                            }
+                                        }
+                                        upd[p2] = st
+                                    });
+                                    Dc.value = Object.assign({}, Dc.value, upd);
+                                    /* mirror onto nodes so Excel / print exports carry it too */
+                                    var glyph = {
+                                            yes: "Yes",
+                                            no: "No",
+                                            na: "-"
+                                        },
+                                        walk = function(list) {
+                                            (list || []).forEach(function(nd) {
+                                                if (nd && nd.resourceid && nd.resourceid in upd) nd._drawingcheck = glyph[upd[nd.resourceid]] || "";
+                                                nd && nd.children && nd.children.length && walk(nd.children)
+                                            })
+                                        };
+                                    walk(s.value)
+                                })
+                            }).then(done, function(e2) {
+                                console.warn("[DrawingCheck] load failed:", e2), done()
+                            })
+                        },
                         __matCoreCache = {},
                         __matCovCache = {},
                         __matBusy = !1,
@@ -2910,7 +3105,7 @@
                     (0, l.wB)(function() {
                         return [s.value, a.selectedColumns]
                     }, function() {
-                        __loadThumbs(), __loadMaterials()
+                        __loadThumbs(), __loadMaterials(), __loadDrawingCheck()
                     }, {
                         immediate: !0
                     });
@@ -2989,7 +3184,7 @@
                                     bookType: "xlsx",
                                     type: "array"
                                 });
-                            (0, T.saveAs)(new Blob([f], {
+                            window.__zenSaveBlob(new Blob([f], {
                                 type: "application/octet-stream"
                             }), p)
                         },
@@ -3680,7 +3875,16 @@
                                         return [(0, l.eW)((0, i.v_)(lt(n[t.key])), 1)]
                                     }),
                                     _: 2
-                                }, 1032, ["color"])])], 2112)) : ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                }, 1032, ["color"])])], 2112)) : "_drawingcheck" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                    key: 12
+                                }, [(0, l.Q3)(" Drawing Check "), (0, l.Lk)("span", {
+                                    style: (0, i.Tr)({
+                                        fontWeight: "bold",
+                                        fontSize: "15px",
+                                        color: "yes" === Dc.value[n.resourceid] ? "#2e7d32" : "no" === Dc.value[n.resourceid] ? "#c62828" : "#9e9e9e"
+                                    }),
+                                    title: "yes" === Dc.value[n.resourceid] ? "Drawing attached" : "no" === Dc.value[n.resourceid] ? "No drawing" : "na" === Dc.value[n.resourceid] ? "Not applicable (standard / tooling / phantom)" : "Checking…"
+                                }, (0, i.v_)("yes" === Dc.value[n.resourceid] ? "✓" : "no" === Dc.value[n.resourceid] ? "✗" : "na" === Dc.value[n.resourceid] ? "–" : "…"), 5)], 2112)) : ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 9
                                 }, [(0, l.Q3)(" Other "), (0, l.Lk)("span", yn, (0, i.v_)(it(n[t.key], t.key)), 1)], 2112))], 4);
                                 var r
@@ -4849,6 +5053,11 @@
                             required: !1,
                             category: "ootb"
                         }, {
+                            key: "_drawingcheck",
+                            label: "Drawing Check",
+                            required: !1,
+                            category: "ootb"
+                        }, {
                             key: "name",
                             label: "Name",
                             required: !1,
@@ -5017,7 +5226,7 @@
                             }, e)
                         }))).apply(this, arguments)
                     }
-                    var G = ["ds6w:label", "_qty", "_subqty", "_totalqty", "ds6wg:revision", "ds6w:status", "ds6w:responsible"],
+                    var G = ["ds6w:label", "_qty", "_subqty", "_totalqty", "ds6wg:revision", "ds6w:status", "ds6w:responsible", "_drawingcheck"],
                         Z = (0, c.KR)(function() {
                             try {
                                 var e = localStorage.getItem(sr);
@@ -5817,7 +6026,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.6"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.7"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
