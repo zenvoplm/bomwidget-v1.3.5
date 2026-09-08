@@ -627,14 +627,9 @@
             });
             const _ = P;
             window.__zenErpApi = P;
-            /* Download from a 3DDashboard widget iframe.
-             * Small files (plain xlsx) download fine via an in-iframe <a download>.
-             * A large image-embedded xlsx (~2 MB) stalls at "x/x MB, 0 B/s" because
-             * Chrome's download scan never finalises a big blob delivered inside the
-             * dashboard's widget iframe. For that case the caller pre-opens a
-             * top-level tab (window.__zenDlTab) during the click gesture; navigating
-             * that tab to the blob performs the download in a top-level context,
-             * which is not subject to the iframe stall. */
+            /* Download helper for the 3DDashboard widget iframe: keeps the object
+             * URL alive for 10 minutes instead of FileSaver's 40 s, so a slow
+             * download is not cancelled while Chrome is still scanning it. */
             window.__zenSaveBlob = function(blob, name) {
                 try {
                     if (window.navigator && window.navigator.msSaveOrOpenBlob) {
@@ -642,25 +637,7 @@
                         return
                     }
                     var url = URL.createObjectURL(blob),
-                        dlTab = window.__zenDlTab;
-                    window.__zenDlTab = null;
-                    if (dlTab && !dlTab.closed) {
-                        try {
-                            dlTab.location.href = url;
-                            setTimeout(function() {
-                                try {
-                                    URL.revokeObjectURL(url)
-                                } catch (e) {}
-                                try {
-                                    dlTab.close()
-                                } catch (e) {}
-                            }, 120000);
-                            return
-                        } catch (e) {
-                            /* fall through to the in-iframe anchor path */
-                        }
-                    }
-                    var a2 = document.createElement("a");
+                        a2 = document.createElement("a");
                     a2.href = url;
                     a2.download = name || "download";
                     a2.rel = "noopener";
@@ -989,7 +966,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.9 (image-export top-level download)");
+            console.log("[BOMWidget] 513 build v1.4.10 (weight column + column loading status)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2104,7 +2081,8 @@
                                         _thumbnail: "Thumbnail",
                                         _coreMaterial: "Core Material",
                                         _coveringMaterial: "Covering Material",
-                                        _drawingcheck: "Drawing Check"
+                                        _drawingcheck: "Drawing Check",
+                                        _weight: "Weight"
                                     } [e] || e.split(":").pop()
                                 }
                             })
@@ -2246,7 +2224,7 @@
                                 }
                                 return !1
                             };
-                            n(s.value), __loadDrawingCheck && __loadDrawingCheck()
+                            n(s.value), __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight()
                         },
                         Gn = function() {
                             var e = ue(le().m(function e() {
@@ -2303,7 +2281,7 @@
                                                 return setTimeout(e, 200)
                                             });
                                         case 5:
-                                            V.value = !1, Cn.value = 0, Ln.value = 0, __loadDrawingCheck && __loadDrawingCheck();
+                                            V.value = !1, Cn.value = 0, Ln.value = 0, __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight();
                                         case 6:
                                             return e.a(2)
                                     }
@@ -2978,9 +2956,14 @@
                             /* incremental: buffer and flush ~5x/sec so cells fill in
                              * progressively instead of all-at-once (no freeze). */
                             __dcPending[pid] = st;
+                            __dcDone++;
                             if (!__dcFlushT) __dcFlushT = setTimeout(function() {
                                 Dc.value = Object.assign({}, Dc.value, __dcPending);
-                                __dcPending = {}, __dcFlushT = null
+                                __dcPending = {}, __dcFlushT = null;
+                                DcProg.value = {
+                                    d: __dcDone,
+                                    t: __dcTotal
+                                }
                             }, 200)
                         },
                         __dcMirrorNodes = function() {
@@ -3029,9 +3012,20 @@
                                 return !(p2 in Dc.value)
                             });
                             if (!pids.length) return;
-                            __dcBusy = !0;
+                            __dcBusy = !0, __dcDone = 0, __dcTotal = pids.length, DcProg.value = {
+                                d: 0,
+                                t: __dcTotal
+                            };
                             var done = function() {
-                                __dcMirrorNodes(), __dcBusy = !1
+                                /* flush whatever the 200 ms timer has not written yet,
+                                 * so the last rows and the mirrored node values are set
+                                 * before the loading indicator disappears */
+                                __dcFlushT && (clearTimeout(__dcFlushT), __dcFlushT = null);
+                                Dc.value = Object.assign({}, Dc.value, __dcPending), __dcPending = {};
+                                __dcMirrorNodes(), __dcBusy = !1, DcProg.value = {
+                                    d: 0,
+                                    t: 0
+                                }
                             };
                             /* MBOM node ids are mfg items -> resolve to their scope EngItem;
                              * EBOM node ids are EngItems already. */
@@ -3071,6 +3065,155 @@
                                 })
                             }).then(done, function(e2) {
                                 console.warn("[DrawingCheck] load failed:", e2), done()
+                            })
+                        },
+                        DcProg = (0, c.KR)({
+                            d: 0,
+                            t: 0
+                        }),
+                        __dcDone = 0,
+                        __dcTotal = 0,
+                        Wt = (0, c.KR)({}),
+                        WtProg = (0, c.KR)({
+                            d: 0,
+                            t: 0
+                        }),
+                        __wtCache = {},
+                        __wtBusy = !1,
+                        __wtPending = {},
+                        __wtFlushT = null,
+                        __wtDone = 0,
+                        __wtTotal = 0,
+                        __colStatus = function(key) {
+                            /* small "loading n/m" line under the column header */
+                            var p2 = "_drawingcheck" === key ? DcProg.value : "_weight" === key ? WtProg.value : null;
+                            if (!p2 || !p2.t) return "";
+                            return '<div style="font-size:10px;font-weight:500;opacity:.85;line-height:1.2">loading ' + p2.d + "/" + p2.t + "</div>"
+                        },
+                        __wtSet = function(pid, val) {
+                            __wtPending[pid] = val;
+                            __wtDone++;
+                            if (!__wtFlushT) __wtFlushT = setTimeout(function() {
+                                Wt.value = Object.assign({}, Wt.value, __wtPending);
+                                __wtPending = {}, __wtFlushT = null;
+                                WtProg.value = {
+                                    d: __wtDone,
+                                    t: __wtTotal
+                                }
+                            }, 200)
+                        },
+                        __wtFetch = function(engIds) {
+                            /* weight lives on the EngItem: ds6w:declaredWeight (declared)
+                             * or ds6w:weight (computed) - only one of the two is ever set */
+                            var need = engIds.filter(function(e2) {
+                                return e2 && !(e2 in __wtCache)
+                            });
+                            if (!need.length) return Promise.resolve();
+                            var jobs = [];
+                            for (var i2 = 0; i2 < need.length; i2 += 200) jobs.push(need.slice(i2, i2 + 200));
+                            return __thumbPool(jobs, 2, function(chunk) {
+                                return _.call3DSpace({
+                                    url: "/cvservlet/fetch/v2?xrequestedwith=xmlhttprequest",
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    data: {
+                                        label: "zen-weight",
+                                        physicalid: chunk,
+                                        select_predicate: ["physicalid", "ds6w:weight", "ds6w:declaredWeight"],
+                                        locale: "us",
+                                        lang: "en",
+                                        with_synthesis_attribute: !1
+                                    },
+                                    type: "json"
+                                }).then(function(d2) {
+                                    (d2 && d2.results || []).forEach(function(res) {
+                                        var pid = "",
+                                            w = "",
+                                            dw = "";
+                                        (res.attributes || []).forEach(function(a3) {
+                                            "physicalid" === a3.name ? pid = a3.value : "ds6w:weight" === a3.name ? w = a3.value : "ds6w:declaredWeight" === a3.name && (dw = a3.value)
+                                        });
+                                        pid && (__wtCache[pid] = {
+                                            w: w,
+                                            dw: dw
+                                        })
+                                    })
+                                }).catch(function(e2) {
+                                    console.warn("[Weight] batch failed:", e2)
+                                }).then(function() {
+                                    chunk.forEach(function(e3) {
+                                        e3 in __wtCache || (__wtCache[e3] = {
+                                            w: "",
+                                            dw: ""
+                                        })
+                                    })
+                                })
+                            })
+                        },
+                        __wtValue = function(eng) {
+                            var c2 = eng ? __wtCache[eng] : null;
+                            if (!c2) return {
+                                t: "-",
+                                k: "missing"
+                            };
+                            var dw = parseFloat(c2.dw),
+                                w = parseFloat(c2.w);
+                            return isNaN(dw) || 0 === dw ? isNaN(w) || 0 === w ? {
+                                t: "-",
+                                k: "missing"
+                            } : {
+                                t: w.toFixed(4),
+                                k: "computed"
+                            } : {
+                                t: dw.toFixed(4),
+                                k: "declared"
+                            }
+                        },
+                        __wtMirrorNodes = function() {
+                            var walk = function(list) {
+                                (list || []).forEach(function(nd) {
+                                    nd && nd.resourceid && Wt.value[nd.resourceid] && (nd._weight = Wt.value[nd.resourceid].t), nd && nd.children && nd.children.length && walk(nd.children)
+                                })
+                            };
+                            walk(s.value)
+                        },
+                        __loadWeight = function() {
+                            if (!a.selectedColumns || -1 === a.selectedColumns.indexOf("_weight") || __wtBusy) return;
+                            var pids = __dcVisible().filter(function(p2) {
+                                return !(p2 in Wt.value)
+                            });
+                            if (!pids.length) return;
+                            __wtBusy = !0, __wtDone = 0, __wtTotal = pids.length, WtProg.value = {
+                                d: 0,
+                                t: __wtTotal
+                            };
+                            var done = function() {
+                                __wtFlushT && (clearTimeout(__wtFlushT), __wtFlushT = null);
+                                Wt.value = Object.assign({}, Wt.value, __wtPending), __wtPending = {};
+                                __wtMirrorNodes(), __wtBusy = !1, WtProg.value = {
+                                    d: 0,
+                                    t: 0
+                                }
+                            };
+                            ("CreateAssembly" === a.itemType ? __resolveScopes(pids) : Promise.resolve(function() {
+                                var m2 = {};
+                                return pids.forEach(function(p2) {
+                                    m2[p2] = p2
+                                }), m2
+                            }())).then(function(engOf) {
+                                var engIds = [];
+                                return pids.forEach(function(p2) {
+                                    var e2 = engOf[p2];
+                                    e2 && engIds.indexOf(e2) < 0 && engIds.push(e2)
+                                }), __wtFetch(engIds).then(function() {
+                                    pids.forEach(function(p2) {
+                                        __wtSet(p2, __wtValue(engOf[p2]))
+                                    })
+                                })
+                            }).then(done, function(e2) {
+                                console.warn("[Weight] load failed:", e2), done()
                             })
                         },
                         __matCoreCache = {},
@@ -3189,7 +3332,7 @@
                     (0, l.wB)(function() {
                         return [s.value, a.selectedColumns]
                     }, function() {
-                        __loadThumbs(), __loadMaterials(), __loadDrawingCheck()
+                        __loadThumbs(), __loadMaterials(), __loadDrawingCheck(), __loadWeight()
                     }, {
                         immediate: !0
                     });
@@ -3228,17 +3371,7 @@
                         st = function() {
                             if (Hn.value.some(function(e2) {
                                     return "_thumbnail" === e2.key
-                                })) {
-                                /* open the download tab now, inside the click gesture,
-                                 * so it is not popup-blocked; the async image export
-                                 * fills it in when the blob is ready. */
-                                try {
-                                    window.__zenDlTab = window.open("", "_blank")
-                                } catch (e) {
-                                    window.__zenDlTab = null
-                                }
-                                return void __bomExportThumbExcel()
-                            }
+                                })) return void __bomExportThumbExcel();
                             var e, n = ut(),
                                 t = ["Level", "Title"].concat(J(Hn.value.map(function(e) {
                                     return e.label
@@ -3738,7 +3871,7 @@
                                 }, ["prevent", "stop"])
                             }, [(0, l.Lk)("span", {
                                 class: "header-text",
-                                innerHTML: ct(n.label)
+                                innerHTML: ct(n.label) + __colStatus(n.key)
                             }, null, 8, Ge), (0, l.Q3)(" Column Filter "), (0, l.Lk)("button", {
                                 class: (0, i.C4)(["filter-btn", {
                                     active: z(n.key)
@@ -3969,7 +4102,15 @@
                                         return [(0, l.eW)((0, i.v_)(lt(n[t.key])), 1)]
                                     }),
                                     _: 2
-                                }, 1032, ["color"])])], 2112)) : "_drawingcheck" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                }, 1032, ["color"])])], 2112)) : "_weight" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                    key: 13
+                                }, [(0, l.Q3)(" Weight "), (0, l.Lk)("span", {
+                                    style: (0, i.Tr)({
+                                        fontWeight: "bold",
+                                        color: Wt.value[n.resourceid] ? "declared" === Wt.value[n.resourceid].k ? "#0000FF" : "computed" === Wt.value[n.resourceid].k ? "#007a3e" : "#FF0000" : "#9e9e9e"
+                                    }),
+                                    title: Wt.value[n.resourceid] ? "declared" === Wt.value[n.resourceid].k ? "Declared weight" : "computed" === Wt.value[n.resourceid].k ? "Computed weight" : "No weight defined" : "Loading\u2026"
+                                }, (0, i.v_)(Wt.value[n.resourceid] ? Wt.value[n.resourceid].t : "\u2026"), 5)], 2112)) : "_drawingcheck" === t.key ? ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 12
                                 }, [(0, l.Q3)(" Drawing Check "), (0, l.Lk)("span", {
                                     style: (0, i.Tr)({
@@ -5152,6 +5293,11 @@
                             required: !1,
                             category: "ootb"
                         }, {
+                            key: "_weight",
+                            label: "Weight",
+                            required: !1,
+                            category: "ootb"
+                        }, {
                             key: "name",
                             label: "Name",
                             required: !1,
@@ -6120,7 +6266,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.9"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.10"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
