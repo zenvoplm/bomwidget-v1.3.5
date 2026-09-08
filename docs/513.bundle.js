@@ -604,9 +604,11 @@
                 open3DPlay: function(objId, objectType, title) {
                     /* The native "open in 3DPlay" flow loads app X3DPLAW_AP on the
                      * dashboard (ifwe) origin and passes the object as ordinary
-                     * 3DXContent. A new tab is used on purpose: navigating the top
-                     * window would take the dashboard away and throw the expanded
-                     * BOM tree away with it. */
+                     * 3DXContent. It is shown in an overlay inside the widget: a top
+                     * navigation would take the dashboard away and discard the
+                     * expanded BOM tree, and a new tab leaves the list behind. The
+                     * ifwe host sends no X-Frame-Options/CSP, so it can be framed;
+                     * the header still carries a new-tab escape hatch. */
                     if (!objId) return;
                     var t = m.getCurrentTenant(),
                         sp = "";
@@ -631,7 +633,61 @@
                         }
                     }));
                     console.log("[3DPlay] opening " + (title || objId));
-                    window.open(url, "_blank") || (window.top.location.href = url)
+                    var prev = document.getElementById("zen-3dplay-modal");
+                    prev && prev.parentNode && prev.parentNode.removeChild(prev);
+                    var ov = document.createElement("div");
+                    ov.id = "zen-3dplay-modal";
+                    ov.style.cssText = "position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+                    var box = document.createElement("div");
+                    box.style.cssText = "background:#fff;width:95%;height:93%;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.35);";
+                    var head = document.createElement("div");
+                    head.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #e0e0e0;background:#fafafa;font:600 12px system-ui,-apple-system,Segoe UI,sans-serif;color:#212121;";
+                    var name = document.createElement("span");
+                    name.textContent = title || objId;
+                    name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+                    var tab = document.createElement("a");
+                    tab.href = url, tab.target = "_blank", tab.rel = "noopener";
+                    tab.textContent = "Open in a new tab";
+                    tab.style.cssText = "font-weight:500;font-size:11px;color:#1976d2;text-decoration:underline;";
+                    var fs = document.createElement("button");
+                    fs.type = "button", fs.textContent = "⛶";
+                    fs.title = "Fullscreen - the overlay is otherwise limited to the widget's own area";
+                    fs.style.cssText = "border:none;background:none;cursor:pointer;font-size:14px;line-height:1;color:#616161;padding:0 2px;";
+                    var x = document.createElement("button");
+                    x.type = "button", x.textContent = "✕";
+                    x.title = "Close (Esc)";
+                    x.style.cssText = "border:none;background:none;cursor:pointer;font-size:16px;line-height:1;color:#616161;padding:0 2px;";
+                    var frame = document.createElement("iframe");
+                    frame.src = url;
+                    frame.style.cssText = "flex:1;border:0;width:100%;";
+                    frame.setAttribute("allow", "fullscreen");
+                    var close = function() {
+                        document.removeEventListener("keydown", esc);
+                        ov.parentNode && ov.parentNode.removeChild(ov)
+                    };
+                    var esc = function(e) {
+                        27 === e.keyCode && close()
+                    };
+                    fs.addEventListener("click", function() {
+                        try {
+                            document.fullscreenElement ? document.exitFullscreen() : ov.requestFullscreen && ov.requestFullscreen()
+                        } catch (e) {
+                            console.warn("[3DPlay] fullscreen refused:", e)
+                        }
+                    });
+                    x.addEventListener("click", function() {
+                        try {
+                            document.fullscreenElement && document.exitFullscreen()
+                        } catch (e) {}
+                        close()
+                    });
+                    ov.addEventListener("click", function(e) {
+                        e.target === ov && close()
+                    });
+                    document.addEventListener("keydown", esc);
+                    head.appendChild(name), head.appendChild(tab), head.appendChild(fs), head.appendChild(x);
+                    box.appendChild(head), box.appendChild(frame), ov.appendChild(box);
+                    document.body.appendChild(ov)
                 }
             };
             void 0 === widget.getPreference(w) && widget.addPreference({
@@ -998,7 +1054,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.4.14 (Drawing column with 3DPlay link; columns moved to EBOM Custom)");
+            console.log("[BOMWidget] 513 build v1.4.15 (3DPlay opens in an overlay inside the widget)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -6433,7 +6489,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.4.14"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.4.15"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
