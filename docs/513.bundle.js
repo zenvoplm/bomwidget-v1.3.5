@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.6.0 (MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.6.1 (Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -6061,15 +6061,19 @@
                                                                     },
                                                                     format: "entity_relation_occurrence"
                                                                 }
-                                                            }, window.__zenEvoBlob && (r.batch.expands[0].filter = {
+                                                            }, (window.__zenEvoBlob || window.__zenCfgId) && (r.batch.expands[0].filter = {
                                                                 or: {
                                                                     filters: [{
                                                                         truncatable_if: {
                                                                             truncate_length_filter: {
                                                                                 and: {
-                                                                                    filters: [{
+                                                                                    filters: [window.__zenCfgId ? {
+                                                                                        config_filter_id: {
+                                                                                            physical_id: window.__zenCfgId
+                                                                                        }
+                                                                                        } : {
                                                                                         config_filter: window.__zenEvoBlob
-                                                                                    }]
+                                                                                        }]
                                                                                 }
                                                                             },
                                                                             "if": {
@@ -6494,15 +6498,19 @@
                                     select_relation: ["physicalid", "ds6w:type", "ds6w:label", "ds6w:description"]
                                 }
                             };
-                            return window.__zenEvoBlob && (body.batch.expands[0].filter = {
+                            return (window.__zenEvoBlob || window.__zenCfgId) && (body.batch.expands[0].filter = {
                                 or: {
                                     filters: [{
                                         truncatable_if: {
                                             truncate_length_filter: {
                                                 and: {
-                                                    filters: [{
+                                                    filters: [window.__zenCfgId ? {
+                                                        config_filter_id: {
+                                                            physical_id: window.__zenCfgId
+                                                        }
+                                                        } : {
                                                         config_filter: window.__zenEvoBlob
-                                                    }]
+                                                        }]
                                                 }
                                             },
                                             "if": {
@@ -6579,7 +6587,7 @@
                                 w = raw && raw !== list ? tally(raw) : null,
                                 cap = 1e4 === (w || c).paths,
                                 el = document.getElementById("zen-bom-count");
-                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.0)", console.log("[zen-count]", c, w), list
+                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.1)", console.log("[zen-count]", c, w), list
                         },
                         __zenEvoPruneInit = window.__zenEvoPrune = function(members) {
                             var keep = window.__zenEvoKeep;
@@ -6600,7 +6608,21 @@
                                     return String(null == v0 ? "" : v0).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
                                 };
                             if (!t || !t.configurationId && !t.evolution) return y.value ? (Promise.resolve("CreateAssembly" === x.value ? re() : te()).then(done, done), !0) : (done(), !0);
-                            if (!t.evolution) return !1;
+                            if (!t.evolution) return y.value ? (
+                                /* [zen-cfg] v1.6.1: a Product Configuration goes to the same cvservlet
+                                   expand as the unfiltered BOM, as config_filter_id (the native MBOM app
+                                   does the same, HAR 2026-09-23). The dseng/dsmfg expand with
+                                   persistentFilter stops at 10000 paths. Live-verified equal occurrence
+                                   sets: MBOM Batman 75/75, EBOM Amandas 125/125. */
+                                window.__zenCfgId = t.configurationId, s.value = null, Promise.resolve("CreateAssembly" === x.value ? re() : te()).then(function() {
+                                    window.__zenCfgId = null, u.value && (u.value.configurationApplied = {
+                                        model: t.model,
+                                        product: t.product,
+                                        configuration: t.configuration
+                                    }), done()
+                                }, function(err) {
+                                    window.__zenCfgId = null, s.value = "Error loading configured BOM: " + (err && err.message || String(err)), n.value = !1, done()
+                                }), !0) : (done(), !0);
                             if (!y.value) return done(), !0;
                             var ev = t.evolution,
                                 code = xe(t.modelCode),
@@ -6829,7 +6851,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.6.0"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.6.1"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
