@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.5.2 (Evolution filter; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.5.3 (Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2036,6 +2036,7 @@
                                     e.id === val && (evo = e)
                                 }), evo ? (x.value = !0, window.__zenErpApplied = {
                                     modelId: p.value,
+                                    modelCode: __zCode.value,
                                     evolution: evo,
                                     configurationId: "",
                                     configuration: null,
@@ -4070,10 +4071,9 @@
                             disabled: !p.value
                         }, [(0, l.Lk)("option", {
                             value: ""
-                        }, "Select Filter"), "CreateAssembly" === a.itemType ? (0, l.Q3)("v-if", !0) : ((0, l.uX)(), (0, l.CE)("option", {
-                            key: 0,
+                        }, "Select Filter"), (0, l.Lk)("option", {
                             value: "evolution"
-                        }, "Evolution")), (0, l.Lk)("option", {
+                        }, "Evolution"), (0, l.Lk)("option", {
                             value: "configuration"
                         }, "Configuration")], 8, ze), [
                             [o.u1, __zKind.value]
@@ -6201,7 +6201,7 @@
                                         case 4:
                                             return s.value = "Error loading manufacturing structure: ".concat(i), console.error("MfgItem BOM Expand API Error:", o.errors), e.a(2);
                                         case 5:
-                                            if ((c = (null == o ? void 0 : o.member) || []).length) {
+                                            if ((c = window.__zenEvoPrune((null == o ? void 0 : o.member) || [])).length) {
                                                 e.n = 6;
                                                 break
                                             }
@@ -6447,6 +6447,17 @@
                             }
                             return a.push.apply(a, o), a
                         },
+                        __zenEvoPruneInit = window.__zenEvoPrune = function(members) {
+                            var keep = window.__zenEvoKeep;
+                            if (!keep) return members;
+                            var out = members.filter(function(m) {
+                                var chain = m.path || m.Path;
+                                return chain && chain.length ? chain.every(function(id) {
+                                    return !!keep[id]
+                                }) : !!keep[m.id]
+                            });
+                            return console.log("[zen-evo] MBOM prune: " + out.length + " of " + members.length + " member(s) kept"), out
+                        },
                         __zenEvoHandle = function(t) {
                             var done = function() {
                                     document.dispatchEvent(new CustomEvent("zen-apply-done"))
@@ -6457,7 +6468,6 @@
                             if (!t || !t.configurationId && !t.evolution) return y.value ? (Promise.resolve("CreateAssembly" === x.value ? re() : te()).then(done, done), !0) : (done(), !0);
                             if (!t.evolution) return !1;
                             if (!y.value) return done(), !0;
-                            if ("CreateAssembly" === x.value) return s.value = "The Evolution filter is available for EBOM only.", done(), !0;
                             var ev = t.evolution,
                                 code = xe(t.modelCode),
                                 xml = '<CfgFilterExpression xs:schemaLocation="urn:com:dassault_systemes:config CfgFilterExpression.xsd" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xmlns="urn:com:dassault_systemes:config"><FilterSelection SelectionMode="Strict" SelectionView="Current"><Context HolderType="Model" HolderName="' + code + '"><TreeSeries Type="ProductState" Name="' + code + '"><Single Name="' + xe(ev.name) + '" Revision="' + xe(ev.revision) + '"/></TreeSeries></Context></FilterSelection></CfgFilterExpression>';
@@ -6488,13 +6498,84 @@
                             }).then(function(r) {
                                 var blob = r && r.filterBinaryForExpand;
                                 if (!blob) throw new Error("createVolatileFilter returned no filter");
-                                return console.log("[zen-evo] filter", r.filterExpression && r.filterExpression[0] && r.filterExpression[0].content), window.__zenEvoBlob = blob, Promise.resolve(te()).then(function() {
+                                if (console.log("[zen-evo] filter", r.filterExpression && r.filterExpression[0] && r.filterExpression[0].content), "CreateAssembly" === x.value) return _.call3DSpace({
+                                    url: X(),
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    data: {
+                                        batch: {
+                                            expands: [{
+                                                label: "zen-evo-mbom-" + Date.now(),
+                                                root: {
+                                                    physical_id: y.value
+                                                },
+                                                filter: {
+                                                    or: {
+                                                        filters: [{
+                                                            truncatable_if: {
+                                                                truncate_length_filter: {
+                                                                    and: {
+                                                                        filters: [{
+                                                                            config_filter: blob
+                                                                        }]
+                                                                    }
+                                                                },
+                                                                "if": {
+                                                                    and: {
+                                                                        filters: [{
+                                                                            all: 1
+                                                                        }]
+                                                                    }
+                                                                }
+                                                            }
+                                                        }]
+                                                    }
+                                                },
+                                                aggregation_processors: [{
+                                                    truncate: {
+                                                        truncatable_paths: 1
+                                                    }
+                                                }],
+                                                graph: {
+                                                    descending_condition_object: {
+                                                        uql: " NOT ( (flattenedtaxonomies:types/VPMCfgEffectivity) )"
+                                                    },
+                                                    descending_condition_relation: {
+                                                        uql: "(flattenedtaxonomies:reltypes/PLMCoreInstance) OR (flattenedtaxonomies:reltypes/PLMCoreRepInstance) OR (flattenedtaxonomies:reltypes/Formula_Ingredient) OR (flattenedtaxonomies:types/PLMConnection) OR (flattenedtaxonomies:reltypes/MfgProcessAlternate)"
+                                                    },
+                                                    descending_condition: {
+                                                        uql: " NOT ( ([ro.SynchroEBOMExt.V_InEBOMUser]:*FALSE*) )"
+                                                    }
+                                                }
+                                            }]
+                                        },
+                                        outputs: {
+                                            format: "entity_relation_occurrence",
+                                            select_object: ["physicalid"],
+                                            select_relation: ["physicalid"]
+                                        }
+                                    },
+                                    type: "json"
+                                }).then(function(cv) {
+                                    var keep = {};
+                                    if ((cv && cv.results || []).forEach(function(m) {
+                                            m.resourceid && !m.Path && (keep[m.resourceid] = 1)
+                                        }), !keep[y.value]) throw new Error("the filtered expand did not return the root");
+                                    return window.__zenEvoKeep = keep, Promise.resolve(re()).then(function() {
+                                        window.__zenEvoKeep = null
+                                    }, function(err) {
+                                        throw window.__zenEvoKeep = null, err
+                                    })
+                                });
+                                return window.__zenEvoBlob = blob, Promise.resolve(te()).then(function() {
                                     window.__zenEvoBlob = null
                                 }, function(err) {
                                     throw window.__zenEvoBlob = null, err
                                 })
                             }).then(done, function(err) {
-                                window.__zenEvoBlob = null, console.error("[zen-evo] evolution apply failed", err), s.value = "Error applying the Evolution filter: " + (err && err.message || String(err)), n.value = !1, done()
+                                window.__zenEvoBlob = null, window.__zenEvoKeep = null, console.error("[zen-evo] evolution apply failed", err), s.value = "Error applying the Evolution filter: " + (err && err.message || String(err)), n.value = !1, done()
                             }), !0
                         },
                         ce = function() {
@@ -6685,7 +6766,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.5.2"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.5.3"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",

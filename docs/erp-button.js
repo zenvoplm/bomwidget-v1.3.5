@@ -14,7 +14,7 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.5.2";
+    var VERSION = "1.5.3";
     var ALLOWED_ROLE = "VPLMProjectLeader";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
@@ -75,38 +75,41 @@
         refresh();
     }
 
-    /* An Evolution filter is shown on screen, but the ERP sync understands only
-       Product Configurations: sending here would push the UNFILTERED structure
-       while the user looks at a filtered one. Blocked until the ERP side
-       supports evolutions (v1.5.2). */
-    function isEvolution() { return !!(applied && applied.evolution); }
+    /* An Evolution filter is sent like a Configuration: the service applies the
+       same Model Version filter, so the ERP gets the filtered BOM and the top
+       code is the evolution name (v1.5.3). */
+    function isEvolution(t) { return !!(t && t.evolution); }
 
     function refresh() {
         var btn = document.getElementById(BTN_ID);
         if (!btn) return;
         btn.style.display = isAllowed() ? "inline-flex" : "none";
         var t = target();
-        var ready = isAllowed() && !!t && !busy && !isEvolution();
+        var ready = isAllowed() && !!t && !busy;
         btn.disabled = !ready;
         btn.style.opacity = ready ? "1" : "0.45";
         btn.title = "Send to ERP (Business Central) v" + VERSION + " — " +
             (!isAllowed() ? "Leader context only" :
              !t ? "open a BOM first" :
-             isEvolution() ? "not available with an Evolution filter - apply a Configuration or nothing" :
+             isEvolution(t) ? "send this evolution / show sync status" :
              (applied ? "send this configuration / show sync status"
                       : "send the unfiltered BOM (top code = root part number)"));
     }
 
-    function storageKey(t) { return "zenErpSync." + (t.configurationId || t.rootPhysicalId); }
+    function requestKey(t) {
+        if (isEvolution(t)) return "EVO_" + t.rootPhysicalId + "_" + t.evolution.name;
+        return t.configurationId || t.rootPhysicalId;
+    }
+    function storageKey(t) { return "zenErpSync." + requestKey(t); }
 
     function onClick() {
         var t = target();
-        if (!t || busy || isEvolution()) return;
+        if (!t || busy) return;
         var api = window.__zenErpApi;
         if (!api || !api.call3DSpace) { alert("ERP Sync: API bridge not available."); return; }
         var known = localStorage.getItem(storageKey(t));
         if (known) { showStatus(api, t, known); return; }
-        if (!t.configurationId &&
+        if (!t.configurationId && !isEvolution(t) &&
             !confirm("No configuration is applied.\nThe BOM will be sent UNFILTERED and the " +
                      "top code will be the root assembly's own part number.\nContinue?")) return;
         createRecord(api, t);
@@ -123,6 +126,11 @@
             configurationName: cfg.name || "",
             configurationTitle: cfg.title || cfg.description || "",
             modelId: t.modelId || "",
+            modelCode: t.modelCode || "",
+            evolution: isEvolution(t) ? { id: t.evolution.id || "", name: t.evolution.name,
+                                          revision: t.evolution.revision || "",
+                                          modelId: t.modelId || "",
+                                          modelCode: t.modelCode || "" } : null,
             productId: t.productId || "",
             rootPhysicalId: t.rootPhysicalId,
             itemType: t.itemType,
@@ -137,7 +145,7 @@
             data: {
                 data: [{
                     dataelements: {
-                        title: "ERPSYNC_" + (t.configurationId || t.rootPhysicalId),
+                        title: "ERPSYNC_" + requestKey(t),
                         description: JSON.stringify(payload)
                     }
                 }]
@@ -149,7 +157,8 @@
             var id = d && (d.id || (d.dataelements && d.dataelements.id));
             if (id) localStorage.setItem(storageKey(t), id);
             alert("ERP Sync request accepted.\n" +
-                (t.configurationId ? "Configuration: " + (cfg.name || t.configurationId)
+                (isEvolution(t) ? "Evolution: " + t.evolution.name + " (top code: " + t.evolution.name + ")" :
+                 t.configurationId ? "Configuration: " + (cfg.name || t.configurationId)
                                    : "Unfiltered BOM — top code: root part number") +
                 "\nThe service will create it in Business Central within a few minutes." +
                 "\nClick the button again to see the status.");
