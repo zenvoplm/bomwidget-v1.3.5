@@ -250,7 +250,8 @@ The bundle exposes the hooks the button needs: `window.__zenErpCtx`,
 | v1.4.15 | 3DPlay in an in-widget overlay (removed in v1.4.16) |
 | v1.4.16 | 3DPlay opens directly; drawing lookup fills batch by batch |
 | v1.4.17 | Drawing cell patches without an expand/collapse; shared lookup deduped |
-| **v1.5.1** | Version rename; no functional change |
+| v1.5.1 | Version rename; no functional change |
+| **v1.5.2** | Evolution filter: Model → Filter by (Evolution / Configuration) → value → Apply. Evolution = Model Version (`dslc/versiongraph`) → `createVolatileFilter` → `config_filter` in the cvservlet EBOM expand (live-verified full depth 2026-09-23: Aurora VP3 5663 / VP4 3706 of 6015 refs). Configuration list = every configuration of every model version, grouped. Nothing selected → unfiltered reload. EBOM only: MBOM offers Configuration alone. Send to ERP is blocked while an Evolution is applied (ERP sync knows configurations only). Port of `weight/HANDOFF-evolution.md`. |
 
 ## 7. Reference files
 

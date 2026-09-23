@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.5.1 (Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.5.2 (Evolution filter; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -1718,6 +1718,14 @@
                         m = (0, c.KR)(""),
                         y = (0, c.KR)(!1),
                         x = (0, c.KR)(!1),
+                        __zKind = (0, c.KR)(""),
+                        __zVal = (0, c.KR)(""),
+                        __zEvos = (0, c.KR)([]),
+                        __zCfgGroups = (0, c.KR)([]),
+                        __zBusy = (0, c.KR)(!1),
+                        __zErr = (0, c.KR)(!1),
+                        __zCode = (0, c.KR)(""),
+                        __zCache = {},
                         k = (0, l.EW)(function() {
                             return v.value.length > 1
                         }),
@@ -1870,8 +1878,107 @@
                                 return e.apply(this, arguments)
                             }
                         }();
+                    /* [zen-evo] Evolution = Model Version (dspfl:ModelVersion), listed by
+                       dslc/versiongraph like the native app. Configurations = every
+                       Product Configuration of every version of the model. Both are
+                       cached per model; stale answers (model or filter changed while
+                       loading) are dropped. */
+                    var __zVersions = function(modelId) {
+                            var hit = __zCache[modelId];
+                            return hit && hit.vers ? Promise.resolve(hit) : _.call3DSpace({
+                                url: "/resources/v1/dslc/versiongraph?withThumbnail=0&withIsLastVersion=0&withAttributes=1&withCopyFrom=1&xrequestedwith=xmlhttprequest",
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
+                                data: {
+                                    graphRequests: [{
+                                        id: modelId,
+                                        versionPidsToKeep: [],
+                                        attributes: ["revision"]
+                                    }]
+                                },
+                                type: "json"
+                            }).then(function(r) {
+                                var g = r && r.graphs && r.graphs[0] || {},
+                                    c0 = __zCache[modelId] || (__zCache[modelId] = {});
+                                return c0.code = g.item && g.item.code || "", c0.vers = (g.versions || []).map(function(x0) {
+                                    return {
+                                        id: x0.id,
+                                        name: x0.name || x0.label || x0.title || x0.id,
+                                        revision: x0.revision || x0.code || ""
+                                    }
+                                }), console.log("[zen-evo] versiongraph", modelId, c0.code, c0.vers), c0
+                            })
+                        },
+                        __zLoadList = function() {
+                            var kind = __zKind.value,
+                                modelId = p.value,
+                                stale = function() {
+                                    return p.value !== modelId || __zKind.value !== kind
+                                };
+                            if (__zEvos.value = [], __zCfgGroups.value = [], __zErr.value = !1, kind && modelId) return __zBusy.value = !0, __zVersions(modelId).then(function(c0) {
+                                if (!stale()) return __zCode.value = c0.code, "evolution" === kind ? (__zEvos.value = c0.vers, void(__zBusy.value = !1)) : c0.groups ? (__zCfgGroups.value = c0.groups, void(__zBusy.value = !1)) : Promise.all(c0.vers.map(function(ver) {
+                                    return _.call3DSpace({
+                                        url: "/resources/v1/modeler/dspfl/dspfl:ModelVersion/".concat(ver.id, "/dspfl:ProductConfiguration"),
+                                        method: "GET",
+                                        headers: {
+                                            "Content-Type": "application/json"
+                                        },
+                                        type: "json"
+                                    }).then(function(r) {
+                                        return {
+                                            ver: ver,
+                                            items: (r && r.member || []).map(function(e) {
+                                                return {
+                                                    id: e.id,
+                                                    name: e.title || e.name,
+                                                    description: e.description,
+                                                    state: e.state,
+                                                    revision: e.revision,
+                                                    completenessStatus: e.completenessStatus,
+                                                    compliancyStatus: e.compliancyStatus,
+                                                    relativePath: e.relativePath,
+                                                    raw: e
+                                                }
+                                            })
+                                        }
+                                    }, function(err) {
+                                        return console.warn("[zen-evo] configurations of " + ver.name + " failed", err), {
+                                            ver: ver,
+                                            items: [],
+                                            failed: !0
+                                        }
+                                    })
+                                })).then(function(gs) {
+                                    var groups = gs.filter(function(g) {
+                                        return g.items.length
+                                    }).map(function(g) {
+                                        return {
+                                            label: g.ver.name + (g.ver.revision ? " (" + g.ver.revision + ")" : ""),
+                                            ver: g.ver,
+                                            items: g.items
+                                        }
+                                    });
+                                    gs.some(function(g) {
+                                        return g.failed
+                                    }) || (c0.groups = groups), stale() || (__zCfgGroups.value = groups, __zBusy.value = !1)
+                                })
+                            }).then(null, function(err) {
+                                console.error("[zen-evo] list load failed", err), stale() || (__zErr.value = !0, __zBusy.value = !1)
+                            });
+                            __zBusy.value = !1
+                        };
                     (0, l.wB)(p, function(e) {
-                        b.value = "", m.value = "", v.value = [], h.value = [], e && L(e)
+                        b.value = "", m.value = "", v.value = [], h.value = [], __zKind.value = "", __zVal.value = "", __zEvos.value = [], __zCfgGroups.value = [], __zCode.value = "", __zErr.value = !1
+                    }), (0, l.wB)(__zKind, function() {
+                        __zVal.value = "", __zLoadList()
+                    }), (0, l.wB)(function() {
+                        return a.itemType
+                    }, function(e) {
+                        "CreateAssembly" === e && "evolution" === __zKind.value && (__zKind.value = "")
+                    }), document.addEventListener("zen-apply-done", function() {
+                        x.value = !1
                     }), (0, l.wB)(b, function(e) {
                         m.value = "", h.value = [], e && E(e)
                     }), (0, l.wB)(function() {
@@ -1892,35 +1999,67 @@
                         deep: !1
                     });
                     var S = function() {
-                            w.value && m.value && (x.value = !0, window.__zenErpApplied = {
-                                modelId: p.value,
-                                productId: w.value,
-                                configurationId: m.value,
-                                configuration: h.value.find(function(e) {
-                                    return e.id === m.value
-                                }),
-                                rootPhysicalId: a.rootPhysicalId,
-                                itemType: a.itemType
-                            }, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
-                                detail: window.__zenErpApplied
-                            })), u("apply-configuration", {
-                                modelId: p.value,
-                                productId: w.value,
-                                configurationId: m.value,
-                                model: d.value.find(function(e) {
+                            var kind = __zKind.value,
+                                val = __zVal.value,
+                                model = d.value.find(function(e) {
                                     return e.id === p.value
-                                }),
-                                product: v.value.find(function(e) {
-                                    return e.id === w.value
-                                }),
-                                configuration: h.value.find(function(e) {
-                                    return e.id === m.value
-                                }),
+                                });
+                            if ("configuration" === kind && val) {
+                                var cfgObj = null,
+                                    verObj = null;
+                                return __zCfgGroups.value.forEach(function(g) {
+                                    g.items.forEach(function(it) {
+                                        it.id === val && (cfgObj = it, verObj = g.ver)
+                                    })
+                                }), x.value = !0, window.__zenErpApplied = {
+                                    modelId: p.value,
+                                    productId: verObj ? verObj.id : "",
+                                    configurationId: val,
+                                    configuration: cfgObj,
+                                    rootPhysicalId: a.rootPhysicalId,
+                                    itemType: a.itemType
+                                }, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
+                                    detail: window.__zenErpApplied
+                                })), void u("apply-configuration", {
+                                    modelId: p.value,
+                                    productId: verObj ? verObj.id : "",
+                                    configurationId: val,
+                                    model: model,
+                                    product: verObj,
+                                    configuration: cfgObj,
+                                    itemType: a.itemType
+                                })
+                            }
+                            if ("evolution" === kind && val) {
+                                var evo = null;
+                                return __zEvos.value.forEach(function(e) {
+                                    e.id === val && (evo = e)
+                                }), evo ? (x.value = !0, window.__zenErpApplied = {
+                                    modelId: p.value,
+                                    evolution: evo,
+                                    configurationId: "",
+                                    configuration: null,
+                                    rootPhysicalId: a.rootPhysicalId,
+                                    itemType: a.itemType
+                                }, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
+                                    detail: window.__zenErpApplied
+                                })), void u("apply-configuration", {
+                                    modelId: p.value,
+                                    modelCode: __zCode.value,
+                                    model: model,
+                                    evolution: evo,
+                                    itemType: a.itemType
+                                })) : void 0
+                            }
+                            x.value = !0, window.__zenErpApplied = null, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
+                                detail: null
+                            })), u("apply-configuration", {
+                                unfiltered: !0,
                                 itemType: a.itemType
-                            }))
+                            })
                         },
                         P = function() {
-                            p.value = "", b.value = "", m.value = "", v.value = [], h.value = [], window.__zenErpApplied = null, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
+                            p.value = "", b.value = "", m.value = "", v.value = [], h.value = [], __zKind.value = "", __zVal.value = "", window.__zenErpApplied = null, document.dispatchEvent(new CustomEvent("zen-erp-config-applied", {
                                 detail: null
                             }))
                         },
@@ -3921,48 +4060,55 @@
                             width: "2",
                             color: "primary",
                             class: "config-spinner"
-                        })) : (0, l.Q3)("v-if", !0)]), (0, l.Q3)(" Version Selection (only show if multiple versions) "), k.value ? ((0, l.uX)(), (0, l.CE)("div", He, [t[32] || (t[32] = (0, l.Lk)("label", {
+                        })) : (0, l.Q3)("v-if", !0)]), (0, l.Q3)(" [zen-evo] Filter by "), (0, l.Lk)("div", Be, [(0, l.Lk)("label", {
                             class: "config-label"
-                        }, "Version", -1)), (0, l.bo)((0, l.Lk)("select", {
-                            "onUpdate:modelValue": t[5] || (t[5] = function(e) {
-                                return b.value = e
-                            }),
+                        }, "Filter by"), (0, l.bo)((0, l.Lk)("select", {
+                            "onUpdate:modelValue": function(e) {
+                                return __zKind.value = e
+                            },
                             class: "config-select",
-                            disabled: g.value
-                        }, [t[31] || (t[31] = (0, l.Lk)("option", {
+                            disabled: !p.value
+                        }, [(0, l.Lk)("option", {
                             value: ""
-                        }, "Select Version", -1)), ((0, l.uX)(!0), (0, l.CE)(l.FK, null, (0, l.pI)(v.value, function(e) {
-                            return (0, l.uX)(), (0, l.CE)("option", {
-                                key: e.id,
-                                value: e.id
-                            }, (0, i.v_)(e.name), 9, Ie)
-                        }), 128))], 8, Fe), [
-                            [o.u1, b.value]
-                        ]), g.value ? ((0, l.uX)(), (0, l.Wv)(r, {
+                        }, "Select Filter"), "CreateAssembly" === a.itemType ? (0, l.Q3)("v-if", !0) : ((0, l.uX)(), (0, l.CE)("option", {
                             key: 0,
-                            indeterminate: "",
-                            size: "16",
-                            width: "2",
-                            color: "primary",
-                            class: "config-spinner"
-                        })) : (0, l.Q3)("v-if", !0)])) : (0, l.Q3)("v-if", !0), (0, l.Q3)(" Configuration Selection "), (0, l.Lk)("div", Be, [t[34] || (t[34] = (0, l.Lk)("label", {
+                            value: "evolution"
+                        }, "Evolution")), (0, l.Lk)("option", {
+                            value: "configuration"
+                        }, "Configuration")], 8, ze), [
+                            [o.u1, __zKind.value]
+                        ])]), (0, l.Q3)(" [zen-evo] Value "), (0, l.Lk)("div", Be, [(0, l.Lk)("label", {
                             class: "config-label"
-                        }, "Configuration", -1)), (0, l.bo)((0, l.Lk)("select", {
-                            "onUpdate:modelValue": t[6] || (t[6] = function(e) {
-                                return m.value = e
-                            }),
+                        }, "evolution" === __zKind.value ? "Evolution" : "Configuration", 1), (0, l.bo)((0, l.Lk)("select", {
+                            "onUpdate:modelValue": function(e) {
+                                return __zVal.value = e
+                            },
                             class: "config-select",
-                            disabled: !w.value || y.value
-                        }, [t[33] || (t[33] = (0, l.Lk)("option", {
+                            disabled: !__zKind.value || __zBusy.value
+                        }, [(0, l.Lk)("option", {
                             value: ""
-                        }, "Select Configuration", -1)), ((0, l.uX)(!0), (0, l.CE)(l.FK, null, (0, l.pI)(h.value, function(e) {
+                        }, __zErr.value ? "Could not load - see console" : "evolution" === __zKind.value ? "Select Evolution" : "configuration" === __zKind.value ? "Select Configuration" : "Select a filter first", 1), "evolution" === __zKind.value ? ((0, l.uX)(!0), (0, l.CE)(l.FK, {
+                            key: 0
+                        }, (0, l.pI)(__zEvos.value, function(e) {
                             return (0, l.uX)(), (0, l.CE)("option", {
                                 key: e.id,
                                 value: e.id
-                            }, (0, i.v_)(e.name), 9, Qe)
+                            }, (0, i.v_)(e.name + (e.revision ? " (" + e.revision + ")" : "")), 9, Qe)
+                        }), 128)) : ((0, l.uX)(!0), (0, l.CE)(l.FK, {
+                            key: 1
+                        }, (0, l.pI)(__zCfgGroups.value, function(g) {
+                            return (0, l.uX)(), (0, l.CE)("optgroup", {
+                                key: g.label,
+                                label: g.label
+                            }, [((0, l.uX)(!0), (0, l.CE)(l.FK, null, (0, l.pI)(g.items, function(e) {
+                                return (0, l.uX)(), (0, l.CE)("option", {
+                                    key: e.id,
+                                    value: e.id
+                                }, (0, i.v_)(e.name), 9, Qe)
+                            }), 128))], 8, ["label"])
                         }), 128))], 8, ze), [
-                            [o.u1, m.value]
-                        ]), y.value ? ((0, l.uX)(), (0, l.Wv)(r, {
+                            [o.u1, __zVal.value]
+                        ]), __zBusy.value ? ((0, l.uX)(), (0, l.Wv)(r, {
                             key: 0,
                             indeterminate: "",
                             size: "16",
@@ -3971,8 +4117,9 @@
                             class: "config-spinner"
                         })) : (0, l.Q3)("v-if", !0)]), (0, l.Lk)("button", {
                             class: "config-apply-btn",
-                            disabled: !w.value || !m.value || x.value,
-                            onClick: S
+                            disabled: x.value || __zBusy.value,
+                            onClick: S,
+                            title: "Apply the selected Evolution or Configuration. With nothing selected the full (unfiltered) structure is loaded."
                         }, [x.value ? ((0, l.uX)(), (0, l.Wv)(r, {
                             key: 0,
                             indeterminate: "",
@@ -3982,7 +4129,7 @@
                         })) : ((0, l.uX)(), (0, l.CE)("svg", Xe, J(t[35] || (t[35] = [(0, l.Lk)("path", {
                             d: "M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z",
                             fill: "currentColor"
-                        }, null, -1)])))), t[36] || (t[36] = (0, l.Lk)("span", null, "Apply", -1))], 8, We), p.value || m.value ? ((0, l.uX)(), (0, l.CE)("button", {
+                        }, null, -1)])))), t[36] || (t[36] = (0, l.Lk)("span", null, "Apply", -1))], 8, We), p.value || m.value || __zKind.value ? ((0, l.uX)(), (0, l.CE)("button", {
                             key: 1,
                             class: "config-clear-btn",
                             onClick: P,
@@ -5914,7 +6061,32 @@
                                                                     },
                                                                     format: "entity_relation_occurrence"
                                                                 }
-                                                            }, e.a(2, _.call3DSpace({
+                                                            }, window.__zenEvoBlob && (r.batch.expands[0].filter = {
+                                                                or: {
+                                                                    filters: [{
+                                                                        truncatable_if: {
+                                                                            truncate_length_filter: {
+                                                                                and: {
+                                                                                    filters: [{
+                                                                                        config_filter: window.__zenEvoBlob
+                                                                                    }]
+                                                                                }
+                                                                            },
+                                                                            "if": {
+                                                                                and: {
+                                                                                    filters: [{
+                                                                                        all: 1
+                                                                                    }]
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }]
+                                                                }
+                                                            }, r.batch.expands[0].aggregation_processors = [{
+                                                                truncate: {
+                                                                    truncatable_paths: 1
+                                                                }
+                                                            }]), e.a(2, _.call3DSpace({
                                                                 url: X(),
                                                                 method: "POST",
                                                                 headers: {
@@ -6275,13 +6447,64 @@
                             }
                             return a.push.apply(a, o), a
                         },
+                        __zenEvoHandle = function(t) {
+                            var done = function() {
+                                    document.dispatchEvent(new CustomEvent("zen-apply-done"))
+                                },
+                                xe = function(v0) {
+                                    return String(null == v0 ? "" : v0).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+                                };
+                            if (!t || !t.configurationId && !t.evolution) return y.value ? (Promise.resolve("CreateAssembly" === x.value ? re() : te()).then(done, done), !0) : (done(), !0);
+                            if (!t.evolution) return !1;
+                            if (!y.value) return done(), !0;
+                            if ("CreateAssembly" === x.value) return s.value = "The Evolution filter is available for EBOM only.", done(), !0;
+                            var ev = t.evolution,
+                                code = xe(t.modelCode),
+                                xml = '<CfgFilterExpression xs:schemaLocation="urn:com:dassault_systemes:config CfgFilterExpression.xsd" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xmlns="urn:com:dassault_systemes:config"><FilterSelection SelectionMode="Strict" SelectionView="Current"><Context HolderType="Model" HolderName="' + code + '"><TreeSeries Type="ProductState" Name="' + code + '"><Single Name="' + xe(ev.name) + '" Revision="' + xe(ev.revision) + '"/></TreeSeries></Context></FilterSelection></CfgFilterExpression>';
+                            return s.value = null, n.value = !0, _.call3DSpace({
+                                url: "/resources/modeler/configuration/filteringServices/createVolatileFilter?xrequestedwith=xmlhttprequest",
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
+                                data: {
+                                    version: "1.2",
+                                    output: {
+                                        targetFormat: "TXT"
+                                    },
+                                    expression: {
+                                        version: "0.1",
+                                        format: "xml",
+                                        content: xml
+                                    },
+                                    dictionary: {
+                                        version: "0.1",
+                                        id: {
+                                            pid: t.modelId
+                                        }
+                                    }
+                                },
+                                type: "json"
+                            }).then(function(r) {
+                                var blob = r && r.filterBinaryForExpand;
+                                if (!blob) throw new Error("createVolatileFilter returned no filter");
+                                return console.log("[zen-evo] filter", r.filterExpression && r.filterExpression[0] && r.filterExpression[0].content), window.__zenEvoBlob = blob, Promise.resolve(te()).then(function() {
+                                    window.__zenEvoBlob = null
+                                }, function(err) {
+                                    throw window.__zenEvoBlob = null, err
+                                })
+                            }).then(done, function(err) {
+                                window.__zenEvoBlob = null, console.error("[zen-evo] evolution apply failed", err), s.value = "Error applying the Evolution filter: " + (err && err.message || String(err)), n.value = !1, done()
+                            }), !0
+                        },
                         ce = function() {
                             var e = _t(Lt().m(function e(t) {
                                 var r, a, o, l, i, c, d, p, f, v, b, g, h, m, k, w, C, L, E, S, P, M;
                                 return Lt().w(function(e) {
                                     for (;;) switch (e.p = e.n) {
                                         case 0:
-                                            if (console.log("Apply Configuration:", t), null != t && t.configurationId && y.value) {
+                                            if (console.log("Apply Configuration:", t), __zenEvoHandle(t)) return e.a(2);
+                                            if (null != t && t.configurationId && y.value) {
                                                 e.n = 1;
                                                 break
                                             }
@@ -6462,7 +6685,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.5.1"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.5.2"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",

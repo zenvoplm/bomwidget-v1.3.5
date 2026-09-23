@@ -1,4 +1,4 @@
-/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.5.1
+/* Zenvo ERP Sync — "Send to ERP" toolbar button.  v1.5.2
  * Bundle hooks: zen-erp-ctx (security context), zen-erp-root (loaded BOM root),
  * zen-erp-config-applied (applied configuration), window.__zenErpApi (call3DSpace).
  * Rules:
@@ -14,7 +14,7 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.5.1";
+    var VERSION = "1.5.2";
     var ALLOWED_ROLE = "VPLMProjectLeader";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
@@ -75,17 +75,24 @@
         refresh();
     }
 
+    /* An Evolution filter is shown on screen, but the ERP sync understands only
+       Product Configurations: sending here would push the UNFILTERED structure
+       while the user looks at a filtered one. Blocked until the ERP side
+       supports evolutions (v1.5.2). */
+    function isEvolution() { return !!(applied && applied.evolution); }
+
     function refresh() {
         var btn = document.getElementById(BTN_ID);
         if (!btn) return;
         btn.style.display = isAllowed() ? "inline-flex" : "none";
         var t = target();
-        var ready = isAllowed() && !!t && !busy;
+        var ready = isAllowed() && !!t && !busy && !isEvolution();
         btn.disabled = !ready;
         btn.style.opacity = ready ? "1" : "0.45";
         btn.title = "Send to ERP (Business Central) v" + VERSION + " — " +
             (!isAllowed() ? "Leader context only" :
              !t ? "open a BOM first" :
+             isEvolution() ? "not available with an Evolution filter - apply a Configuration or nothing" :
              (applied ? "send this configuration / show sync status"
                       : "send the unfiltered BOM (top code = root part number)"));
     }
@@ -94,7 +101,7 @@
 
     function onClick() {
         var t = target();
-        if (!t || busy) return;
+        if (!t || busy || isEvolution()) return;
         var api = window.__zenErpApi;
         if (!api || !api.call3DSpace) { alert("ERP Sync: API bridge not available."); return; }
         var known = localStorage.getItem(storageKey(t));
