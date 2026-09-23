@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.5.5 (instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.6.0 (MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -6177,14 +6177,14 @@
                                                 type_filter_rel: [],
                                                 filter: {}
                                             }, e.n = 3, _.call3DSpace({
-                                                url: K(y.value),
+                                                url: X(),
                                                 method: "POST",
                                                 headers: {
                                                     "Content-Type": "application/json"
                                                 },
-                                                data: a,
+                                                data: window.__zenMbomCvBody(y.value),
                                                 type: "json"
-                                            });
+                                            }).then(window.__zenMbomCvToMembers);
                                         case 3:
                                             if (o = e.v, console.log("MfgItem BOM Expand Response:", o), !((null == o || null === (t = o.errors) || void 0 === t ? void 0 : t.length) > 0)) {
                                                 e.n = 5;
@@ -6209,7 +6209,7 @@
                                         case 6:
                                             if (d = j.value.filter(function(e) {
                                                     return ("mbom_custom" === e.category || "shared_custom" === e.category || "ebom_custom" === e.category) && Z.value.includes(e.key)
-                                                }), p = d.length > 0 || Z.value.includes("ds6wg:EnterpriseExtension.V_PartNumber"), f = new Map, !p) {
+                                                }), p = d.length > 0, f = new Map, !p) {
                                                 e.n = 8;
                                                 break
                                             }
@@ -6447,6 +6447,118 @@
                             }
                             return a.push.apply(a, o), a
                         },
+                        __zenMbomCvInit = (window.__zenMbomCvBody = function(root) {
+                            /* [zen-mbom-cv] v1.6.0: the dsmfg expand stops at 10000 paths
+                               (Aurora: 10000 of 11718 occurrences). The cvservlet expand with
+                               the native MBOM graph returns them all (verified 2026-09-23:
+                               11718 occurrences, 1714 titles, every count equal to the native
+                               export) in ~1 s instead of ~5 s. */
+                            var body = {
+                                batch: {
+                                    expands: [{
+                                        label: "zen-mbom-" + Date.now(),
+                                        root: {
+                                            physical_id: root
+                                        },
+                                        filter: {
+                                            or: {
+                                                filters: [{
+                                                    and: {
+                                                        filters: [{
+                                                            prefix_filter: {
+                                                                prefix_path: [{
+                                                                    physical_id_path: [root]
+                                                                }]
+                                                            }
+                                                        }]
+                                                    }
+                                                }]
+                                            }
+                                        },
+                                        graph: {
+                                            descending_condition_object: {
+                                                uql: " NOT ( (flattenedtaxonomies:types/VPMCfgEffectivity) )"
+                                            },
+                                            descending_condition_relation: {
+                                                uql: "(flattenedtaxonomies:reltypes/PLMCoreInstance)"
+                                            },
+                                            descending_condition: {
+                                                uql: " NOT ( ([ro.SynchroEBOMExt.V_InEBOMUser]:*FALSE*) )"
+                                            }
+                                        }
+                                    }]
+                                },
+                                outputs: {
+                                    format: "entity_relation_occurrence",
+                                    select_object: ["physicalid", "ds6w:type", "ds6w:label", "ds6w:identifier", "ds6w:status", "ds6wg:revision", "ds6w:created", "ds6w:modified", "owner", "organization", "ds6w:project", "ds6wg:EnterpriseExtension.V_PartNumber"],
+                                    select_relation: ["physicalid", "ds6w:type", "ds6w:label", "ds6w:description"]
+                                }
+                            };
+                            return window.__zenEvoBlob && (body.batch.expands[0].filter = {
+                                or: {
+                                    filters: [{
+                                        truncatable_if: {
+                                            truncate_length_filter: {
+                                                and: {
+                                                    filters: [{
+                                                        config_filter: window.__zenEvoBlob
+                                                    }]
+                                                }
+                                            },
+                                            "if": {
+                                                and: {
+                                                    filters: [{
+                                                        all: 1
+                                                    }]
+                                                }
+                                            }
+                                        }
+                                    }]
+                                }
+                            }, body.batch.expands[0].aggregation_processors = [{
+                                truncate: {
+                                    truncatable_paths: 1
+                                }
+                            }]), body
+                        }, window.__zenMbomCvToMembers = function(r) {
+                            /* cvservlet rows -> the dsmfg expand member shape the MBOM code reads */
+                            var res = r && r.results || [],
+                                out = [];
+                            return res.forEach(function(m) {
+                                if (m.Path) out.push({
+                                    path: m.Path
+                                });
+                                else if (m.resourceid) {
+                                    var t = m["ds6w:type"] || "";
+                                    /Instance/.test(t) ? out.push({
+                                        id: m.resourceid,
+                                        type: t,
+                                        name: m["ds6w:label"] || "",
+                                        description: m["ds6w:description"] || "",
+                                        parent: m.from,
+                                        reference: m.to
+                                    }) : out.push({
+                                        id: m.resourceid,
+                                        type: t,
+                                        title: m["ds6w:label"] || "",
+                                        name: m["ds6w:identifier"] || "",
+                                        state: String(m["ds6w:status"] || "").split(".").pop(),
+                                        revision: m["ds6wg:revision"] || "",
+                                        created: m["ds6w:created"] || "",
+                                        modified: m["ds6w:modified"] || "",
+                                        owner: m.owner || "",
+                                        organization: m.organization || "",
+                                        collabspace: m["ds6w:project"] || "",
+                                        "dsmfg:EnterpriseReference": {
+                                            partNumber: m["ds6wg:EnterpriseExtension.V_PartNumber"] || ""
+                                        }
+                                    })
+                                }
+                            }), console.log("[zen-mbom-cv] " + res.length + " cvservlet row(s) -> " + out.length + " member(s)"), {
+                                member: out,
+                                errors: out.length ? [] : r && r.errors || []
+                            }
+                        }),
                         __zenBomCountInit = window.__zenBomCount = function(list, raw) {
                             /* [zen-count] Bottom-right footer: what the expand returned.
                                Path rows = occurrences; other rows split by type into
@@ -6467,7 +6579,7 @@
                                 w = raw && raw !== list ? tally(raw) : null,
                                 cap = 1e4 === (w || c).paths,
                                 el = document.getElementById("zen-bom-count");
-                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.5.4)", console.log("[zen-count]", c, w), list
+                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.0)", console.log("[zen-count]", c, w), list
                         },
                         __zenEvoPruneInit = window.__zenEvoPrune = function(members) {
                             var keep = window.__zenEvoKeep;
@@ -6520,78 +6632,7 @@
                             }).then(function(r) {
                                 var blob = r && r.filterBinaryForExpand;
                                 if (!blob) throw new Error("createVolatileFilter returned no filter");
-                                if (console.log("[zen-evo] filter", r.filterExpression && r.filterExpression[0] && r.filterExpression[0].content), "CreateAssembly" === x.value) return _.call3DSpace({
-                                    url: X(),
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json"
-                                    },
-                                    data: {
-                                        batch: {
-                                            expands: [{
-                                                label: "zen-evo-mbom-" + Date.now(),
-                                                root: {
-                                                    physical_id: y.value
-                                                },
-                                                filter: {
-                                                    or: {
-                                                        filters: [{
-                                                            truncatable_if: {
-                                                                truncate_length_filter: {
-                                                                    and: {
-                                                                        filters: [{
-                                                                            config_filter: blob
-                                                                        }]
-                                                                    }
-                                                                },
-                                                                "if": {
-                                                                    and: {
-                                                                        filters: [{
-                                                                            all: 1
-                                                                        }]
-                                                                    }
-                                                                }
-                                                            }
-                                                        }]
-                                                    }
-                                                },
-                                                aggregation_processors: [{
-                                                    truncate: {
-                                                        truncatable_paths: 1
-                                                    }
-                                                }],
-                                                graph: {
-                                                    descending_condition_object: {
-                                                        uql: " NOT ( (flattenedtaxonomies:types/VPMCfgEffectivity) )"
-                                                    },
-                                                    descending_condition_relation: {
-                                                        uql: "(flattenedtaxonomies:reltypes/PLMCoreInstance) OR (flattenedtaxonomies:reltypes/PLMCoreRepInstance) OR (flattenedtaxonomies:reltypes/Formula_Ingredient) OR (flattenedtaxonomies:types/PLMConnection) OR (flattenedtaxonomies:reltypes/MfgProcessAlternate)"
-                                                    },
-                                                    descending_condition: {
-                                                        uql: " NOT ( ([ro.SynchroEBOMExt.V_InEBOMUser]:*FALSE*) )"
-                                                    }
-                                                }
-                                            }]
-                                        },
-                                        outputs: {
-                                            format: "entity_relation_occurrence",
-                                            select_object: ["physicalid"],
-                                            select_relation: ["physicalid"]
-                                        }
-                                    },
-                                    type: "json"
-                                }).then(function(cv) {
-                                    var keep = {};
-                                    if ((cv && cv.results || []).forEach(function(m) {
-                                            m.resourceid && !m.Path && (keep[m.resourceid] = 1)
-                                        }), !keep[y.value]) throw new Error("the filtered expand did not return the root");
-                                    return window.__zenEvoKeep = keep, Promise.resolve(re()).then(function() {
-                                        window.__zenEvoKeep = null
-                                    }, function(err) {
-                                        throw window.__zenEvoKeep = null, err
-                                    })
-                                });
-                                return window.__zenEvoBlob = blob, Promise.resolve(te()).then(function() {
+                                return console.log("[zen-evo] filter", r.filterExpression && r.filterExpression[0] && r.filterExpression[0].content), window.__zenEvoBlob = blob, Promise.resolve("CreateAssembly" === x.value ? re() : te()).then(function() {
                                     window.__zenEvoBlob = null
                                 }, function(err) {
                                     throw window.__zenEvoBlob = null, err
@@ -6788,7 +6829,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.5.5"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.6.0"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
