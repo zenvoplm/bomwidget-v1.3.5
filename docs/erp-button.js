@@ -14,7 +14,7 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.5.4";
+    var VERSION = "1.5.5";
     var ALLOWED_ROLE = "VPLMProjectLeader";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
