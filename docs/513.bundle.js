@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.5.3 (Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.5.4 (instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -6143,7 +6143,7 @@
                                             }
                                             return s.value = "Product structure not found or empty.", e.a(2);
                                         case 9:
-                                            u.value = i, m = i.results.find(function(e) {
+                                            u.value = i, window.__zenBomCount(i.results), m = i.results.find(function(e) {
                                                 return e.resourceid === y.value
                                             }), x = (null == m ? void 0 : m["ds6w:label"]) || (null == m ? void 0 : m["ds6w:identifier"]) || y.value, R(y.value, x, "VPMReference"), e.n = 11;
                                             break;
@@ -6201,7 +6201,7 @@
                                         case 4:
                                             return s.value = "Error loading manufacturing structure: ".concat(i), console.error("MfgItem BOM Expand API Error:", o.errors), e.a(2);
                                         case 5:
-                                            if ((c = window.__zenEvoPrune((null == o ? void 0 : o.member) || [])).length) {
+                                            if ((c = window.__zenBomCount(window.__zenEvoPrune((null == o ? void 0 : o.member) || []), (null == o ? void 0 : o.member) || [])).length) {
                                                 e.n = 6;
                                                 break
                                             }
@@ -6447,6 +6447,28 @@
                             }
                             return a.push.apply(a, o), a
                         },
+                        __zenBomCountInit = window.__zenBomCount = function(list, raw) {
+                            /* [zen-count] Bottom-right footer: what the expand returned.
+                               Path rows = occurrences; other rows split by type into
+                               instances (type contains "Instance") and items. The modeler
+                               expands were seen to stop at exactly 10000 paths, so that
+                               value is shown in red. raw = the list before an Evolution prune. */
+                            var tally = function(a) {
+                                    var r = {
+                                        paths: 0,
+                                        inst: 0,
+                                        items: 0
+                                    };
+                                    return (a || []).forEach(function(m) {
+                                        m && (m.Path || m.path ? r.paths++ : /Instance/.test(String(m.type || m["ds6w:type"] || "")) ? r.inst++ : r.items++)
+                                    }), r
+                                },
+                                c = tally(list),
+                                w = raw && raw !== list ? tally(raw) : null,
+                                cap = (w || c).paths >= 1e4,
+                                el = document.getElementById("zen-bom-count");
+                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">10000 path limit reached - the BOM may be incomplete</span>' : ""), el.title = "Loaded from the expand (v1.5.4)", console.log("[zen-count]", c, w), list
+                        },
                         __zenEvoPruneInit = window.__zenEvoPrune = function(members) {
                             var keep = window.__zenEvoKeep;
                             if (!keep) return members;
@@ -6631,7 +6653,7 @@
                                                 return e.reason || e.message || e.code || JSON.stringify(e)
                                             }).join(", "), s.value = "Error loading configured BOM: ".concat(i), console.error("Configured BOM Expand API Error:", l.errors), e.a(2);
                                         case 5:
-                                            if ((c = (null == l ? void 0 : l.member) || []).length) {
+                                            if ((c = window.__zenBomCount((null == l ? void 0 : l.member) || [])).length) {
                                                 e.n = 6;
                                                 break
                                             }
@@ -6766,7 +6788,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.5.3"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.5.4"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
