@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.6.1 (Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.6.2 (default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2242,8 +2242,12 @@
                             An.value = null, document.removeEventListener("mousemove", Dn), document.removeEventListener("mouseup", Rn), document.body.style.cursor = "", document.body.style.userSelect = ""
                         },
                         Hn = (0, l.EW)(function() {
+                            /* [zen-cols] v1.6.2: Make Buy / Car System live in different attributes on
+                               the EBOM part and on the MBOM item; the default selects both, so each view
+                               shows only its own pair (no duplicate headers). */
+                            var zenOtherView = "CreateAssembly" === a.itemType ? ["ds6wg:XP_VPMReference_Ext.make_buy", "ds6wg:XP_VPMReference_Ext.Car_System"] : ["dsmfg:XP_DELFmiFunctionPPRReference_Ext.Make_Buy", "dsmfg:XP_DELFmiFunctionPPRReference_Ext.Car_System"];
                             return a.selectedColumns.filter(function(e) {
-                                return "ds6w:label" !== e
+                                return "ds6w:label" !== e && -1 === zenOtherView.indexOf(e)
                             }).map(function(e) {
                                 var n = a.availableColumns.find(function(n) {
                                     return n.key === e
@@ -5809,7 +5813,7 @@
                             }, e)
                         }))).apply(this, arguments)
                     }
-                    var G = ["ds6w:label", "_qty", "_subqty", "_totalqty", "ds6wg:revision", "ds6w:status", "ds6w:responsible", "_drawingcheck"],
+                    var G = ["ds6w:label", "_qty", "_totalqty", "ds6wg:revision", "ds6w:status", "ds6w:responsible", "ds6wg:EnterpriseExtension.V_PartNumber", "ds6wg:XP_VPMReference_Ext.make_buy", "ds6wg:XP_VPMReference_Ext.Car_System", "dsmfg:XP_DELFmiFunctionPPRReference_Ext.Make_Buy", "dsmfg:XP_DELFmiFunctionPPRReference_Ext.Car_System"],
                         Z = (0, c.KR)(function() {
                             try {
                                 var e = localStorage.getItem(sr);
@@ -6587,7 +6591,7 @@
                                 w = raw && raw !== list ? tally(raw) : null,
                                 cap = 1e4 === (w || c).paths,
                                 el = document.getElementById("zen-bom-count");
-                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.1)", console.log("[zen-count]", c, w), list
+                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.2)", console.log("[zen-count]", c, w), list
                         },
                         __zenEvoPruneInit = window.__zenEvoPrune = function(members) {
                             var keep = window.__zenEvoKeep;
@@ -6851,7 +6855,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.6.1"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.6.2"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
