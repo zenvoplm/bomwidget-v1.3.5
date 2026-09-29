@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.6.2 (default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.6.3 (MBOM attribute columns in the structure call; default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -6190,8 +6190,20 @@
                                                 headers: {
                                                     "Content-Type": "application/json"
                                                 },
-                                                data: window.__zenMbomCvBody(y.value),
+                                                data: window.__zenMbomCvBody(y.value, window.__zenMbomCvCols = j.value.filter(function(e) {
+                                                    return ("mbom_custom" === e.category || "shared_custom" === e.category) && e.m1Name && Z.value.includes(e.key)
+                                                })),
                                                 type: "json"
+                                            }).then(function(r0) {
+                                                return r0 && r0.errors && r0.errors.length && !(r0.results || []).length && window.__zenMbomCvCols.length ? (console.warn("[zen-mbom-cv] attribute columns rejected, loading them separately:", r0.errors), window.__zenMbomCvCols = [], _.call3DSpace({
+                                                    url: X(),
+                                                    method: "POST",
+                                                    headers: {
+                                                        "Content-Type": "application/json"
+                                                    },
+                                                    data: window.__zenMbomCvBody(y.value, []),
+                                                    type: "json"
+                                                })) : r0
                                             }).then(window.__zenMbomCvToMembers);
                                         case 3:
                                             if (o = e.v, console.log("MfgItem BOM Expand Response:", o), !((null == o || null === (t = o.errors) || void 0 === t ? void 0 : t.length) > 0)) {
@@ -6217,7 +6229,11 @@
                                         case 6:
                                             if (d = j.value.filter(function(e) {
                                                     return ("mbom_custom" === e.category || "shared_custom" === e.category || "ebom_custom" === e.category) && Z.value.includes(e.key)
-                                                }), p = d.length > 0, f = new Map, !p) {
+                                                }), p = d.filter(function(e) {
+                                                    return "_" !== String(e.key).charAt(0) && "ds6wg:XP_VPMReference_Ext.make_buy" !== e.key && "ds6wg:XP_VPMReference_Ext.Car_System" !== e.key && !(window.__zenMbomCvCols || []).some(function(c0) {
+                                                        return c0.key === e.key
+                                                    })
+                                                }).length > 0, f = window.__zenMbomCvAttrMap(c), !p) {
                                                 e.n = 8;
                                                 break
                                             }
@@ -6455,7 +6471,14 @@
                             }
                             return a.push.apply(a, o), a
                         },
-                        __zenMbomCvInit = (window.__zenMbomCvBody = function(root) {
+                        __zenMbomCvInit = (window.__zenMbomCvAttrMap = function(members) {
+                            /* v1.6.3: members carrying cvservlet attribute values, in the shape
+                               le() reads from a dsmfg bulkfetch member */
+                            var m0 = new Map;
+                            return (members || []).forEach(function(m) {
+                                m && m["dsmfg:MfgItemEnterpriseAttributes"] && m0.set(m.id, m)
+                            }), m0
+                        }, window.__zenMbomCvBody = function(root, cols) {
                             /* [zen-mbom-cv] v1.6.0: the dsmfg expand stops at 10000 paths
                                (Aurora: 10000 of 11718 occurrences). The cvservlet expand with
                                the native MBOM graph returns them all (verified 2026-09-23:
@@ -6498,7 +6521,12 @@
                                 },
                                 outputs: {
                                     format: "entity_relation_occurrence",
-                                    select_object: ["physicalid", "ds6w:type", "ds6w:label", "ds6w:identifier", "ds6w:status", "ds6wg:revision", "ds6w:created", "ds6w:modified", "owner", "organization", "ds6w:project", "ds6wg:EnterpriseExtension.V_PartNumber"],
+                                    select_object: ["physicalid", "ds6w:type", "ds6w:label", "ds6w:identifier", "ds6w:status", "ds6wg:revision", "ds6w:created", "ds6w:modified", "owner", "organization", "ds6w:project", "ds6wg:EnterpriseExtension.V_PartNumber"].concat((cols || []).map(function(e) {
+                                        /* v1.6.3: MBOM attribute columns come with the structure (Aurora:
+                                           2484 items, Make_Buy/Car_System identical to bulkfetch; 0.5 s
+                                           instead of ~90 s) */
+                                        return "ds6wg:" + e.m1Name
+                                    })),
                                     select_relation: ["physicalid", "ds6w:type", "ds6w:label", "ds6w:description"]
                                 }
                             };
@@ -6563,7 +6591,14 @@
                                         collabspace: m["ds6w:project"] || "",
                                         "dsmfg:EnterpriseReference": {
                                             partNumber: m["ds6wg:EnterpriseExtension.V_PartNumber"] || ""
-                                        }
+                                        },
+                                        "dsmfg:MfgItemEnterpriseAttributes": (window.__zenMbomCvCols || []).length ? function() {
+                                            var ea = {};
+                                            return window.__zenMbomCvCols.forEach(function(c0) {
+                                                var v0 = m["ds6wg:" + c0.m1Name];
+                                                null != v0 && (ea[c0.m1Name] = v0, c0.internalName && (ea[c0.internalName] = v0))
+                                            }), ea
+                                        }() : void 0
                                     })
                                 }
                             }), console.log("[zen-mbom-cv] " + res.length + " cvservlet row(s) -> " + out.length + " member(s)"), {
@@ -6591,7 +6626,7 @@
                                 w = raw && raw !== list ? tally(raw) : null,
                                 cap = 1e4 === (w || c).paths,
                                 el = document.getElementById("zen-bom-count");
-                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.2)", console.log("[zen-count]", c, w), list
+                            return el || (el = document.createElement("div"), el.id = "zen-bom-count", el.style.cssText = "position:fixed;right:8px;bottom:6px;z-index:50;padding:2px 8px;border:1px solid #eee;border-radius:3px;background:#fafafa;font-size:11px;color:#777;pointer-events:none;", document.body.appendChild(el)), el.innerHTML = c.inst + " instance(s) \u00b7 " + c.items + " item(s)" + (c.paths ? " \u00b7 " + c.paths + " path(s)" : "") + (w ? " (of " + w.inst + " instance(s) before the Evolution filter)" : "") + (cap ? ' \u00b7 <span style="color:#c00">exactly 10000 paths - the service may have cut the BOM</span>' : ""), el.title = "Loaded from the expand (v1.6.3)", console.log("[zen-count]", c, w), list
                         },
                         __zenEvoPruneInit = window.__zenEvoPrune = function(members) {
                             var keep = window.__zenEvoKeep;
@@ -6855,7 +6890,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.6.2"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.6.3"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
