@@ -3,3 +3,25 @@
 desktop.ini
 Thumbs.db
 backup-pre-thumbnail/
+
+# ── erp-integration ────────────────────────────────────────────────
+# Secrets and anything the service generates. config.json holds the 3DX
+# and Business Central credentials and must never be committed.
+erp-integration/service/config.json
+erp-integration/service/data/
+erp-integration/service/logs/
+erp-integration/faz0-bc-poc/config.json
+erp-integration/faz0-bc-poc/raw/
+__pycache__/
+*.pyc
+
+# AL symbol packages (~6 MB, re-downloaded with "AL: Download Symbols")
+erp-integration/bc-extension/.alpackages/
+erp-integration/bc-extension/.snapshots/
+
+# widget-erp is the local patch workspace, not a source of truth:
+# 513.bundle.readable.js is a copy of docs/513.bundle.js and the rest are
+# STALE copies of older deploys - never deploy from here. Only the pristine
+# rebase base (513.bundle.base.js) is tracked.
+erp-integration/widget-erp/*
+!erp-integration/widget-erp/513.bundle.base.js

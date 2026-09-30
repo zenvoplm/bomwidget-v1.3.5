@@ -1,0 +1,7 @@
+{
+  "tenant_id": "<Directory (tenant) ID - GUID>",
+  "environment": "<BC environment adi, orn. Sandbox>",
+  "client_id": "<Application (client) ID - GUID>",
+  "client_secret": "<Client secret VALUE>",
+  "company_name": ""
+}

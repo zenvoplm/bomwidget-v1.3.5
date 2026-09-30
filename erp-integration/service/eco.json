@@ -1,0 +1,3 @@
+{
+ "message": "[GETECOSYSTEM] Service failed - Cannot invoke \"java.lang.String.equals(java.lang.Object)\" because \"<parameter13>\" is null"
+}

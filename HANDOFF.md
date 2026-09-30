@@ -1,13 +1,16 @@
-# BOM Widget — Handoff (Zenvo additions)
+# BOM Widget & ERP Integration — Handoff (Zenvo additions)
 
-Working notes for continuing the Zenvo build of the BOM Widget.
-Current version: **v1.5.1** · written 8 Sep 2026.
+Working notes for continuing the Zenvo build of the BOM Widget **and the
+3DEXPERIENCE → Business Central ERP integration**, which now lives in the same
+repo. Widget **v1.6.3** · written 8 Sep 2026, ERP integration folded in 30 Sep 2026.
 
 The widget itself is the team's product. This repo carries the deployed
 build plus a set of Zenvo-specific additions: the **Send to ERP** button and
 four columns (**Drawing Check**, **Weight**, **Drawing**, and the earlier
-Thumbnail / Core Material / Covering Material work). This document covers
-those additions and the platform knowledge they cost.
+Thumbnail / Core Material / Covering Material work). It also carries the other
+half of that flow — the Python sync service and the Business Central extension
+the button feeds (section 5). This document covers those additions and the
+platform knowledge they cost.
 
 ---
 
@@ -19,10 +22,21 @@ those additions and the platform knowledge they cost.
 | `docs/erp-button.js` | Companion script for the Send to ERP toolbar button. Plain JS, readable. |
 | `docs/index.html` | Widget entry point. The `?v=` query on both scripts is the cache-bust — bump it every release or the dashboard serves the old file. |
 | `docs/bundle.js`, `docs/634.bundle.js` | Untouched team code. |
-| `../ERP Integration/` | The Python sync service, the BC extension, `SYNC-RULES.md`, `ARCHITECTURE.md`, `TODO.md`. Not in this repo. |
+| `erp-integration/service/` | The Python sync service (3DX → Business Central). |
+| `erp-integration/bc-extension/` | The AL extension: item fields and the custom API pages the service calls. |
+| `erp-integration/SYNC-RULES.md` | The synchronisation rule book — the authority on what the service does. |
+| `erp-integration/ARCHITECTURE.md`, `TODO.md`, `TEST-REPORT-AURORA.md` | Architecture, open items, the Aurora volume test. |
+| `erp-integration/widget-erp/` | Local patch workspace. Only `513.bundle.base.js` (the pristine v1.3.9 rebase base) is tracked; everything else there is a copy — and most of it a **stale** copy of an older deploy. Never deploy from this folder. |
 
-A working copy of the bundle is kept at `../ERP Integration/widget-erp/513.bundle.readable.js`;
-edits are made there and copied into `docs/` before committing.
+A working copy of the bundle is kept at `erp-integration/widget-erp/513.bundle.readable.js`;
+edits are made there and copied into `docs/` before committing. It is deliberately
+untracked: `docs/513.bundle.js` is the one source of truth, and the working copy is
+just `git show HEAD:docs/513.bundle.js` written to a file.
+
+**Nothing secret is in git.** `erp-integration/service/config.json` holds the 3DX and
+Business Central credentials and is git-ignored, as are the service's `data/` (SQLite
+state, session cookies) and `logs/`. They exist only on the dev PC. A fresh clone starts
+from `config.example.json`.
 
 ## 2. Standing rules (learned the hard way)
 
@@ -213,13 +227,85 @@ already on the wire (ids are claimed up front, not when their batch starts).
 which is what the button does. It writes an ERPSYNC control Document that the
 Python service polls; the service attaches those documents to the "ERP SYNC"
 bookmark `D82E5FADE88327006A7EE2820003F2DC`. Rules for what the service then
-does live in `../ERP Integration/SYNC-RULES.md`.
+does live in `erp-integration/SYNC-RULES.md`.
 
 The bundle exposes the hooks the button needs: `window.__zenErpCtx`,
 `__zenErpApi`, `__zenErpSetRoot`, `__zenErpApplied`, `__zenContApply`,
 `__zenSaveBlob`.
 
-## 5. Open points
+## 5. The ERP integration
+
+The other half of the Send to ERP flow. Moved into this repo on 30 Sep 2026 from a
+loose folder next to it; nothing about how it works changed in the move.
+
+### 5.1 The chain
+
+Widget button → an **ERPSYNC control Document** in 3DX → the Python service picks it up
+(scan every ~2 min, release poll every 10 min, BOM sync every 30 min per configuration)
+→ Business Central items and multi-level certified Production BOMs. Verified end to end
+on Amandas, Batman and Aurora (`MASS-00005862-A`: 1809 items, 95 BOMs, ~7 min first
+write). `SYNC-RULES.md` is the authority on every rule; read it before changing
+behaviour, and record a changed rule there rather than only in code.
+
+The service is a plain Python process on the dev PC (`python main.py`), so it stops when
+the session ends. Moving it to the DFC Manager server is an open item in `TODO.md`.
+`erp_service_v0.9.0.zip` is the packaged snapshot used for deployment.
+
+### 5.2 The BC extension
+
+`bc-extension/` is an AL app (`Zenvo ERP Sync`, id range 50100-50149). It provides the
+four informational item fields shown on the item card's **3DEXPERIENCE** FastTab and the
+three custom API pages the service talks to — `zenItems`, `zenProductionBOMHeaders`,
+`zenProductionBOMLines`. Without it the service cannot run at all.
+
+| Field | mfg item key | engineering item key | Type |
+|---|---|---|---|
+| Car System | `Car_System` | `Car_System` | Text[100] |
+| Outsourced | `Outsourced` | `Outsourcedafterpurchase` | Boolean |
+| Serviceability | `Serviceabilitypart` | `Serviceabilitypart` | Text[100] |
+| Make Buy (3DX) | `Make_Buy` | `make_buy` | Text[30] |
+
+All four are read-only on the card: the service overwrites them on every run, so an edit
+in BC would silently vanish. The three besides Make Buy were removed on 13 Aug 2026 and
+restored on 10 Sep in version **1.2.0.0** — the original AL source was recovered
+from inside the published `1.0.0.0.app`, which carries its own source
+(`includeSourceInSymbolFile`). Worth remembering: a published `.app` is a backup.
+
+3DX returns these values inconsistently — Outsourced is a real boolean on mfg items,
+Serviceability is a `'TRUE'`/`'false'` **string** on mfg items and a boolean on
+engineering items. `item_fields` normalises booleans and those string variants to
+lower-case `true`/`false` and passes anything else through. The fallback is **per key**,
+not per block: a mfg item can carry `MfgItemEnterpriseAttributes` and still be missing a
+single attribute (only 59 of 96 sampled mfg items define `Car_System`), and the
+engineering value is used then. Make Buy keeps its original per-block behaviour because
+the Replenishment System rule depends on it.
+
+### 5.3 Building and publishing the extension
+
+The dev PC already has everything: the AL extension (`ms-dynamics-smb.al-17.0`) and the
+symbols in `bc-extension/.alpackages` (git-ignored, re-fetched with **AL: Download
+Symbols**). To build without VS Code:
+
+```
+& "$env:USERPROFILE\.vscode\extensions\ms-dynamics-smb.al-17.0.2273547\bin\win32\alc.exe" `
+  "/project:<repo>\erp-integration\bc-extension" `
+  "/packagecachepath:<repo>\erp-integration\bc-extension\.alpackages" `
+  "/out:<repo>\erp-integration\bc-extension\Zenvo Automotive_Zenvo ERP Sync_1.2.0.0.app"
+```
+
+Publishing is the user's step: open `bc-extension` in VS Code and press **Ctrl+F5**
+(`launch.json` is already set to `Zenvo_UAT` with `ForceSync`). Uploading the `.app`
+through Extension Management may be refused because the app is unsigned — VS Code is the
+path that has always worked.
+
+**After every publish, check the permission set.** In BC, *Microsoft Entra Applications →
+`3DX ERP Sync` → User Permission Sets* must contain `ZEN ERP SYNC`. That line has a habit
+of disappearing, and without it the custom API returns 403 while everything else looks
+fine. The page refuses edits until `State` is set to **Disabled**; set it back to
+**Enabled** afterwards. A line shown in red italic means the app that defined the
+permission set is not installed — fix the extension first, the line resolves itself.
+
+## 6. Open points
 
 - **Excel export with thumbnails stalls at "x/x MB, 0 B/s".** Below the widget,
   in Chrome's download-finalisation layer. The 10-minute blob lifetime (v1.4.7)
@@ -232,8 +318,20 @@ The bundle exposes the hooks the button needs: `window.__zenErpCtx`,
   excluded — one line in the Drawing Check loader. Waiting on a decision.
 - **Aurora scale.** ~4900 visible rows. Batches are 200 roots, two in flight;
   measurements say there is room to raise both if it still feels slow.
+- **The BC extension is not installed in `Zenvo_UAT`** — re-verified 30 Sep 2026 two
+  ways: the custom API 404s (`.../api/zenvo/erpsync/v1.0/...`), and none of the 118
+  extensions in the environment is the Zenvo one. BC itself says so on the permission
+  page: *"the app that installed them has been uninstalled"*. Consequences: the four ZEN
+  item fields do not exist in BC at all, and **the sync service would fail if started**,
+  because the BOM API pages are in the same app. The item cards and BOM data from the
+  Aurora run are untouched — the standard API still returns them. **Next step: publish
+  1.2.0.0** (built and waiting in `bc-extension/`), then re-check the permission set.
+- **Pending test write.** Once the extension is published, write the attributes to
+  `1012413-A` ("Rear Hood Panel White") and read them back, to confirm the mapping end to
+  end. Its live 3DX values: Car System unset, Outsourced false, Serviceability false,
+  Make Buy `Kit`.
 
-## 6. Version history (Zenvo additions)
+## 7. Version history (Zenvo additions)
 
 | Version | Change |
 |---|---|
@@ -260,12 +358,14 @@ The bundle exposes the hooks the button needs: `window.__zenErpCtx`,
 | **v1.6.2** | Default columns (only for users without saved columns; saved selections untouched): Title, Qty, Total Qty, Revision, Status, Responsible, Part Number, Make Buy, Car System (Sub Qty and Drawing Check removed). Make Buy / Car System keys differ per view (EBOM `ds6wg:XP_VPMReference_Ext.make_buy` / `.Car_System`, MBOM `dsmfg:XP_DELFmiFunctionPPRReference_Ext.Make_Buy` / `.Car_System`, from ParamWS listofattributesfortype); both pairs are in the default and the table (`Hn`, also used by the Excel export) hides the other view's pair. |
 | **v1.6.3** | MBOM attribute columns (mbom_custom/shared_custom with m1Name) are selected in the same cvservlet structure call as `ds6wg:<m1Name>` and copied into `dsmfg:MfgItemEnterpriseAttributes` (keyed by m1Name and internalName) so `le()` reads them unchanged; the per-item bulkfetch (`ae()`) now runs only for columns the structure call did not deliver. Unknown meta -> one retry without the attribute columns, then the old bulkfetch. Verified on Aurora MBOM 2026-09-29: 2484 items, Make_Buy and Car_System identical to bulkfetch, 0.5 s instead of ~91 s. Also: the Aurora EBOM `CYCLE_DETECTED` warning came from data (Oil tank Assy 1001012 contained its own parent Dry sump tank system Assy 1000890); fixed in 3DX, expand clean. |
 
-## 7. Reference files
+## 8. Reference files
 
-- `../ERP Integration/SYNC-RULES.md` — the ERP synchronisation rule book.
-- `../ERP Integration/ARCHITECTURE.md` — service architecture.
-- `../ERP Integration/TODO.md` — open items across the integration.
-- `../ERP Integration/TEST-REPORT-AURORA.md` — the Aurora volume test.
+- `erp-integration/SYNC-RULES.md` — the ERP synchronisation rule book.
+- `erp-integration/ARCHITECTURE.md` — service architecture.
+- `erp-integration/TODO.md` — open items across the integration.
+- `erp-integration/TEST-REPORT-AURORA.md` — the Aurora volume test.
+- `erp-integration/faz0-bc-poc/` — the first BC exploration (probes + `kesif-raporu.md`);
+  historical, but it is where the API shapes were first established.
 - `../ECR/IssueWidget_2_0_0.html` — source of the 3DPlay deep link and the
   `progressiveexpand` drawing query.
 - `../weight/Weight API.txt`, `../weight/WeightReport_v1.7.html` — the weight

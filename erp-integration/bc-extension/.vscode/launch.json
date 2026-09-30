@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "al",
+      "request": "launch",
+      "name": "Zenvo UAT Sandbox",
+      "environmentType": "Sandbox",
+      "environmentName": "Zenvo_UAT",
+      "tenant": "168755d4-beaa-4d13-abb6-9edbd279a5c8",
+      "startupObjectType": "Page",
+      "startupObjectId": 30,
+      "breakOnError": "All",
+      "launchBrowser": false,
+      "schemaUpdateMode": "ForceSync"
+    }
+  ]
+}

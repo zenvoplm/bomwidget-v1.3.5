@@ -1,0 +1,30 @@
+{
+  "dx": {
+    "space_url": "https://<tenant>-eu1-space.3dexperience.3ds.com/enovia",
+    "passport_url": "https://eu1-ds-iam.3dexperience.3ds.com",
+    "tenant": "<TENANT_ID>",
+    "username": "<servis hesabi>",
+    "password": "<sifre>",
+    "security_context": "VPLMProjectLeader.Company Name.<Organizasyon>",
+    "verify_ssl": true
+  },
+  "bc": {
+    "tenant_id": "<Entra tenant GUID>",
+    "environment": "<BC environment>",
+    "client_id": "<App client ID>",
+    "client_secret": "<Client secret VALUE>",
+    "company_name": "<BC sirket adi>",
+    "item_defaults": {
+      "baseUnitOfMeasure": "PCS",
+      "genProdPostingGroup": "RETAIL",
+      "inventoryPostingGroup": "RESALE"
+    }
+  },
+  "cadence_seconds": {
+    "command_scan": 120,
+    "release_poller": 600,
+    "bom_sync": 1800
+  },
+  "data_dir": "data",
+  "logs_dir": "logs"
+}
