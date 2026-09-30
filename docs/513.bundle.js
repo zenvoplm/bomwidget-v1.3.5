@@ -412,7 +412,9 @@
                                                             c = o.organization;
                                                         l && c && i ? a.defaultValue = "".concat(i.name, ".").concat(c.name, ".").concat(l.name) : a.options && a.options.length > 0 && (a.defaultValue = a.options[0].value)
                                                     }
-                                                    widget.addPreference(a), widget.setValue(w, a.defaultValue), L = a.defaultValue
+                                                    widget.addPreference(a), widget.setValue(w, a.defaultValue), L = a.defaultValue, window.__zenErpCtx = L, document.dispatchEvent(new CustomEvent("zen-erp-ctx", {
+                                                        detail: L
+                                                    }))
                                                 }(), e()
                                         },
                                         onFailure: function(n) {
@@ -1003,7 +1005,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.6.4 (Group by attribute; Draft status + lifecycle colours; MBOM attribute columns in the structure call; default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.6.5 (Parent EBOM Item column; Owner / Collaborative Space labels; ERP button on the start-up context; Group by attribute; Draft status + lifecycle colours; MBOM attribute columns in the structure call; default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2363,7 +2365,8 @@
                                         _coveringMaterial: "Covering Material",
                                         _drawingcheck: "Drawing Check",
                                         _drawing: "Drawing",
-                                        _weight: "Weight"
+                                        _weight: "Weight",
+                                        _parentEbomItem: "Parent EBOM Item"
                                     } [e] || e.split(":").pop()
                                 }
                             })
@@ -2960,6 +2963,25 @@
                                     r = n[1];
                                 r && p.includes(r["ds6w:type"]) && (d[t] = r)
                             });
+                            /* [zen-pei] v1.6.5: "Parent EBOM Item" = the MBOM instance description
+                               (ds6w:description of DELFmiFunctionIdentifiedInstance). A row stands
+                               for every instance of that child under the parent, so the distinct
+                               descriptions are joined. */
+                            var zDesc = {},
+                                zPei = {};
+                            r.forEach(function(e) {
+                                if (e && e.resourceid && t.includes(e["ds6w:type"])) {
+                                    var v = e._original && e._original.description || e["ds6w:description"] || "";
+                                    v && (zDesc[e.resourceid] = String(v).trim())
+                                }
+                            }), u.forEach(function(e, n) {
+                                e.forEach(function(e2, n2) {
+                                    var s2 = [];
+                                    e2.forEach(function(id) {
+                                        zDesc[id] && s2.indexOf(zDesc[id]) < 0 && s2.push(zDesc[id])
+                                    }), s2.length && (zPei[n + "|" + n2] = s2.join(", "))
+                                })
+                            });
                             var f = new Map;
                             u.forEach(function(e, n) {
                                 if (d[n]) {
@@ -2999,7 +3021,8 @@
                                                     quantity: c,
                                                     children: [],
                                                     expanded: !1,
-                                                    level: n + 1
+                                                    level: n + 1,
+                                                    _parentEbomItem: zPei[e.resourceid + "|" + i]
                                                 });
                                                 return h(s, n + 1, t, r, e._uid, new Set(o), e.subQuantity, e), s
                                             }
@@ -5848,7 +5871,7 @@
                             category: "ootb"
                         }, {
                             key: "ds6w:responsible",
-                            label: "Responsible",
+                            label: "Owner",
                             required: !1,
                             category: "ootb"
                         }, {
@@ -5873,7 +5896,7 @@
                             category: "ootb"
                         }, {
                             key: "ds6w:project",
-                            label: "Project",
+                            label: "Collaborative Space",
                             required: !1,
                             category: "ootb"
                         }, {
@@ -5886,6 +5909,11 @@
                             label: "Part Number",
                             required: !1,
                             category: "ootb"
+                        }, {
+                            key: "_parentEbomItem",
+                            label: "Parent EBOM Item",
+                            required: !1,
+                            category: "mbom_custom"
                         }],
                         j = (0, c.KR)([]),
                         O = (0, l.EW)(function() {
@@ -7062,7 +7090,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.6.4"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.6.5"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",

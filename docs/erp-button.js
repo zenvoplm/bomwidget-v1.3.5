@@ -14,7 +14,7 @@
  */
 (function () {
     "use strict";
-    var VERSION = "1.6.4";
+    var VERSION = "1.6.5";
     var ALLOWED_ROLE = "VPLMProjectLeader";
     var BTN_ID = "zen-erp-btn";
     // Resolve the icon against this script's own URL so it works regardless of
@@ -39,7 +39,9 @@
     document.addEventListener("zen-erp-root", function (e) { root = e.detail || null; refresh(); });
     document.addEventListener("zen-erp-config-applied", function (e) { applied = e.detail; refresh(); });
 
-    function isAllowed() { return (ctx || "").indexOf(ALLOWED_ROLE) !== -1; }
+    // v1.6.5: read the live value - the context picked at start-up is set on
+    // window.__zenErpCtx before (or without) a zen-erp-ctx event reaching us.
+    function isAllowed() { return (window.__zenErpCtx || ctx || "").indexOf(ALLOWED_ROLE) !== -1; }
     function target() {
         if (applied) return applied;
         if (root) return { configurationId: "", configuration: null,
