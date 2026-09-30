@@ -1003,7 +1003,7 @@
                 },
                 defaultQueryParams: Q
             };
-            console.log("[BOMWidget] 513 build v1.6.3 (MBOM attribute columns in the structure call; default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
+            console.log("[BOMWidget] 513 build v1.6.4 (Group by attribute; Draft status + lifecycle colours; MBOM attribute columns in the structure call; default columns Part Number / Make Buy / Car System; Configuration + MBOM via cvservlet, no 10000 cap; instance count footer; Evolution filter EBOM+MBOM, ERP with evolution; Drawing / Drawing Check / Weight columns, EBOM Custom grouping)");
             var __bomMatUrl = function(kind) {
                     return "/resources/v1/engineeringItem/getApplied" + kind + "?xrequestedwith=xmlhttprequest&tenant=" + encodeURIComponent(Z.tenant)
                 },
@@ -2076,6 +2076,105 @@
                             left: 0
                         }),
                         I = (0, c.KR)(""),
+                        /* [zen-group] v1.6.4: group the second level by an attribute (port of
+                           the Process Engineer widget). The root's direct children are bucketed
+                           by the chosen column's value under "Label: value (n)" header rows; each
+                           member keeps its own subtree. A search bypasses the grouping. */
+                        __zGrp = (0, c.KR)(function() {
+                            try {
+                                return localStorage.getItem("zenBomGroupBy") || ""
+                            } catch (e) {
+                                return ""
+                            }
+                        }()),
+                        __zGrpShut = (0, c.KR)({}),
+                        __zGrpMenu = (0, c.KR)(!1),
+                        __zGrpInd = {},
+                        __zGrpCss = function() {
+                            if (document.getElementById("zen-grp-css")) return;
+                            var st = document.createElement("style");
+                            st.id = "zen-grp-css", st.textContent = ".zen-grp-wrap{position:relative;display:flex}.toolbar-btn.zen-grp-on{background:#e3f2fd}.toolbar-btn.zen-grp-open::after,.toolbar-btn.zen-grp-open::before{display:none}.toolbar-btn .zen-grp-img{width:18px;height:18px;display:block;pointer-events:none}.zen-grp-menu{position:absolute;top:36px;right:0;z-index:300;min-width:220px;max-height:360px;overflow:auto;background:#fff;border:1px solid #dadce0;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.16);padding:4px 0;font-size:13px;color:#202124;text-align:left}.zen-grp-head{padding:6px 12px;font-size:11px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.3px}.zen-grp-item{display:flex;align-items:center;padding:6px 12px;cursor:pointer;white-space:nowrap}.zen-grp-item:hover{background:#f1f3f4}.zen-grp-sel{color:#1976d2;font-weight:600}.zen-grp-tick{display:inline-block;width:18px;flex:none}.zen-grp-sep{height:1px;background:#eee;margin:4px 0}.tree-row.zen-grp-row{background:#eef3f8;border-bottom:1px solid #d7e2ee;cursor:pointer;gap:4px}.tree-row.zen-grp-row:hover{background:#e3ecf6}.zen-grp-chev{width:18px;height:18px;flex:none;color:#5f6368;margin-left:8px}.zen-grp-name{font-weight:700;color:#1c3d5a}.zen-grp-count{color:#57606a;margin-left:6px;font-size:11px}", document.head.appendChild(st)
+                        },
+                        __zGrpIcon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAVCAYAAABCIB6VAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAAEnQAABJ0Ad5mH3gAAADeSURBVEhL1ZMxDgFBFIZ/ipdVzBlwETTCKYRTiEQrm+wliEtYNIYeDUqcYQqbaZ5uk9l9uhnh697/T/78mZlXYWZGAKpFwRf/F1yR7jhdb7HT+3wmIoyGAzQbdQDA/fHEfLGEtTY/02m30O918zlYY7DAKt3weDLl4+lctEocT2ceT6a8SjeOHqyxGFyLIiilQERFqwQRQSmFWhQ5uvh4PhAb++C7wVofMIsTXK63olXicr1hFifQ+uDoYvAry2CMcRbgE9ZaGGPwyjJHF4N9IP6Kn15psbEPgjX+v+A3Q8KiiDOeJucAAAAASUVORK5CYII=",
+                        __zGrpNo = {
+                            _thumbnail: 1,
+                            _qty: 1,
+                            _subqty: 1,
+                            _totalqty: 1,
+                            _parentProduct: 1,
+                            _drawing: 1,
+                            _drawingcheck: 1,
+                            _weight: 1,
+                            _coreMaterial: 1,
+                            _coveringMaterial: 1
+                        },
+                        __zGrpCols = function() {
+                            return Hn.value.filter(function(e) {
+                                return !__zGrpNo[e.key]
+                            })
+                        },
+                        __zGrpCol = function() {
+                            var k = __zGrp.value;
+                            return k ? __zGrpCols().find(function(e) {
+                                return e.key === k
+                            }) || null : null
+                        },
+                        __zGrpVal = function(e, k) {
+                            var v = X(e, k);
+                            if ("-" === v || null == v) v = "";
+                            if (at(v)) v = lt(v);
+                            return String(v).trim() || "(empty)"
+                        },
+                        __zGrpEsc = function(s) {
+                            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+                        },
+                        __zGrpToggle = function(gid) {
+                            var m = Object.assign({}, __zGrpShut.value);
+                            m[gid] ? delete m[gid] : m[gid] = 1, __zGrpShut.value = m, __loadDrawingCheck && __loadDrawingCheck(), __loadWeight && __loadWeight(), __loadDrawing && __loadDrawing()
+                        },
+                        __zGrpSet = function(k) {
+                            __zGrp.value = k || "", __zGrpShut.value = {}, __zGrpMenu.value = !1;
+                            try {
+                                localStorage.setItem("zenBomGroupBy", __zGrp.value)
+                            } catch (e) {}
+                        },
+                        __zGrpOutside = function(ev) {
+                            for (var t = ev.target; t && t !== document; t = t.parentNode)
+                                if (t.classList && t.classList.contains("zen-grp-wrap")) return;
+                            __zGrpMenu.value = !1, document.removeEventListener("mousedown", __zGrpOutside, !0)
+                        },
+                        __zGrpMenuToggle = function() {
+                            __zGrpMenu.value = !__zGrpMenu.value, document.removeEventListener("mousedown", __zGrpOutside, !0), __zGrpMenu.value && document.addEventListener("mousedown", __zGrpOutside, !0)
+                        },
+                        __zGrpMenuHtml = function() {
+                            var k = __zGrpCol() ? __zGrp.value : "",
+                                tick = function(on) {
+                                    return '<span class="zen-grp-tick">' + (on ? "&#10003;" : "") + "</span>"
+                                };
+                            return '<div class="zen-grp-head">Group second level by</div><div class="zen-grp-item' + (k ? "" : " zen-grp-sel") + '" data-k="">' + tick(!k) + 'No grouping</div><div class="zen-grp-sep"></div>' + __zGrpCols().map(function(e) {
+                                var on = e.key === k;
+                                return '<div class="zen-grp-item' + (on ? " zen-grp-sel" : "") + '" data-k="' + __zGrpEsc(e.key) + '">' + tick(on) + __zGrpEsc(e.label) + "</div>"
+                            }).join("")
+                        },
+                        __zGrpMenuClick = function(ev) {
+                            for (var t = ev.target; t && t !== ev.currentTarget; t = t.parentNode)
+                                if (t.getAttribute && null !== t.getAttribute("data-k")) {
+                                    document.removeEventListener("mousedown", __zGrpOutside, !0), __zGrpSet(t.getAttribute("data-k"));
+                                    return
+                                }
+                        },
+                        __zGrpRow = function(n) {
+                            var chev = n.open ? "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" : "M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z";
+                            return (0, l.uX)(), (0, l.CE)("div", {
+                                key: 1,
+                                class: "tree-row zen-grp-row",
+                                title: n.open ? "Collapse group" : "Expand group",
+                                innerHTML: '<span style="display:inline-block;flex:none;width:' + Math.min(20 * (n.level || 0), 200) + 'px"></span><svg class="zen-grp-chev" viewBox="0 0 24 24"><path d="' + chev + '" fill="currentColor"/></svg><span class="zen-grp-name">' + __zGrpEsc(n.label) + ": " + __zGrpEsc(n.value) + '</span><span class="zen-grp-count">(' + n.count + ")</span>",
+                                onClick: function() {
+                                    return __zGrpToggle(n._uid)
+                                }
+                            }, null, 8, ["title", "innerHTML", "onClick"])
+                        },
                         B = (0, l.EW)(function() {
                             return {
                                 top: "".concat(F.value.top, "px"),
@@ -2353,7 +2452,44 @@
                                         }
                                     })
                                 };
-                            return a(s.value), n
+                            var zc = __zGrpCol();
+                            if (zc && !t) {
+                                __zGrpInd = {};
+                                (s.value || []).forEach(function(root) {
+                                    if (root && root.resourceid && (n.push(root), root.expanded && root.children && root.children.length)) {
+                                        var bk = {},
+                                            ord = [];
+                                        root.children.forEach(function(ch) {
+                                            if (ch && ch.resourceid && (!r || wn(ch) || Kn(ch))) {
+                                                var v = __zGrpVal(ch, zc.key);
+                                                bk[v] || (bk[v] = [], ord.push(v)), bk[v].push(ch)
+                                            }
+                                        }), ord.sort(function(x, y) {
+                                            return "(empty)" === x ? 1 : "(empty)" === y ? -1 : x.localeCompare(y, void 0, {
+                                                numeric: !0
+                                            })
+                                        }), ord.forEach(function(v) {
+                                            var gid = "zgrp|" + (root._uid || root.resourceid) + "|" + zc.key + "|" + v,
+                                                open = !__zGrpShut.value[gid];
+                                            if (n.push({
+                                                    _zGroup: !0,
+                                                    _uid: gid,
+                                                    label: zc.label,
+                                                    value: v,
+                                                    count: bk[v].length,
+                                                    open: open,
+                                                    level: (root.level || 0) + 1
+                                                }), open) {
+                                                var m = n.length;
+                                                a(bk[v], !1);
+                                                for (var q = m; q < n.length; q++) __zGrpInd[n[q]._uid] = 1
+                                            }
+                                        })
+                                    }
+                                });
+                                return n
+                            }
+                            return __zGrpInd = {}, a(s.value), n
                         }),
                         Kn = function(e) {
                             var n;
@@ -2656,16 +2792,26 @@
                         nt = function(e) {
                             var n;
                             if (!e) return "grey";
-                            switch ((null == e || null === (n = e.split(".")) || void 0 === n ? void 0 : n.pop()) || e) {
+                            /* [zen-status] v1.6.4: lifecycle colours of the platform's maturity graph */
+                            switch (String((null == e || null === (n = e.split(".")) || void 0 === n ? void 0 : n.pop()) || e).toUpperCase()) {
+                                case "PRIVATE":
+                                case "DRAFT":
+                                    return "#9b2c98";
                                 case "IN_WORK":
-                                    return "warning";
-                                case "RELEASED":
-                                    return "success";
+                                    return "#007da3";
                                 case "FROZEN":
-                                    return "info";
+                                    return "#757575";
+                                case "RELEASED":
+                                    return "#018308";
+                                case "OBSOLETE":
+                                    return "#808080";
                                 default:
                                     return "grey"
                             }
+                        },
+                        __zStVariant = function(e) {
+                            /* Obsolete is drawn as an outlined (white) chip, the others filled */
+                            return "OBSOLETE" === String(e || "").split(".").pop().toUpperCase() ? "outlined" : "flat"
                         },
                         tt = function(e, n) {
                             var t = e[n];
@@ -2675,7 +2821,12 @@
                             var n;
                             if (!e) return "-";
                             var t = (null == e || null === (n = e.split(".")) || void 0 === n ? void 0 : n.pop()) || e;
-                            switch (t) {
+                            switch (String(t).toUpperCase()) {
+                                case "PRIVATE":
+                                case "DRAFT":
+                                    return "Draft";
+                                case "OBSOLETE":
+                                    return "Obsolete";
                                 case "IN_WORK":
                                     return "In Work";
                                 case "RELEASED":
@@ -3936,7 +4087,9 @@
                             fill: "currentColor"
                         })], -1)])))])) : (0, l.Q3)("v-if", !0), (0, l.Lk)("div", me, [(0, l.Lk)("button", {
                             class: "toolbar-btn expand-btn",
-                            onClick: Gn,
+                            onClick: function(ev) {
+                                return __zGrpShut.value = {}, Gn(ev)
+                            },
                             "data-tooltip": V.value ? "".concat(Math.round(Cn.value / Ln.value * 100), "%") : "Expand All",
                             disabled: _n.value
                         }, [V.value ? ((0, l.uX)(), (0, l.CE)("div", ke, [(0, l.bF)(r, {
@@ -4019,7 +4172,26 @@
                         }, [(0, l.Lk)("path", {
                             d: "M3,4H7V8H3V4M9,5V7H21V5H9M3,10H7V14H3V10M9,11V13H21V11H9M3,16H7V20H3V16M9,17V19H21V17H9",
                             fill: "currentColor"
-                        })], -1)])), 8, Te), t[28] || (t[28] = (0, l.Lk)("div", {
+                        })], -1)])), 8, Te), (__zGrpCss(), (0, l.Lk)("div", {
+                            class: "zen-grp-wrap"
+                        }, [(0, l.Lk)("button", {
+                            class: (0, i.C4)(["toolbar-btn", {
+                                "zen-grp-on": !!__zGrpCol() || __zGrpMenu.value,
+                                "zen-grp-open": __zGrpMenu.value
+                            }]),
+                            onClick: __zGrpMenuToggle,
+                            "data-tooltip": __zGrpCol() ? "Grouped by " + __zGrpCol().label : "Group",
+                            disabled: _n.value
+                        }, [(0, l.Lk)("img", {
+                            class: "zen-grp-img",
+                            src: __zGrpIcon,
+                            alt: "Group"
+                        })], 10, ["data-tooltip", "disabled"]), __zGrpMenu.value ? ((0, l.uX)(), (0, l.CE)("div", {
+                            key: 0,
+                            class: "zen-grp-menu",
+                            innerHTML: __zGrpMenuHtml(),
+                            onClick: __zGrpMenuClick
+                        }, null, 8, ["innerHTML"])) : (0, l.Q3)("v-if", !0)])), t[28] || (t[28] = (0, l.Lk)("div", {
                             class: "toolbar-divider"
                         }, null, -1)), (0, l.Lk)("button", {
                             class: "toolbar-btn",
@@ -4331,7 +4503,7 @@
                             }, [(0, l.Lk)("span", {
                                 class: "indent-spacer",
                                 style: (0, i.Tr)({
-                                    width: (p = n.level, (null == p ? 0 : Math.min(20 * p, 200)) + "px")
+                                    width: (p = null == n.level ? null : n.level + (__zGrpInd[n._uid] ? 1 : 0), (null == p ? 0 : Math.min(20 * p, 200)) + "px")
                                 })
                             }, null, 4), null !== (d = n.children) && void 0 !== d && d.length ? ((0, l.uX)(), (0, l.CE)("button", {
                                 key: 0,
@@ -4425,13 +4597,13 @@
                                 }, [(0, l.Q3)(" Status "), (0, l.Lk)("span", hn, [(0, l.bF)(c, {
                                     size: "x-small",
                                     color: nt(n["ds6w:status"]),
-                                    variant: "flat"
+                                    variant: __zStVariant(n["ds6w:status"])
                                 }, {
                                     default: (0, l.k6)(function() {
                                         return [(0, l.eW)((0, i.v_)(rt(n["ds6w:status"])), 1)]
                                     }),
                                     _: 2
-                                }, 1032, ["color"])])], 2112)) : at(n[t.key]) ? ((0, l.uX)(), (0, l.CE)(l.FK, {
+                                }, 1032, ["color", "variant"])])], 2112)) : at(n[t.key]) ? ((0, l.uX)(), (0, l.CE)(l.FK, {
                                     key: 8
                                 }, [(0, l.Q3)(" Boolean (True/False) "), (0, l.Lk)("span", mn, [(0, l.bF)(c, {
                                     size: "x-small",
@@ -4465,7 +4637,7 @@
                                     key: 9
                                 }, [(0, l.Q3)(" Other "), (0, l.Lk)("span", yn, (0, i.v_)(it(n[t.key], t.key)), 1)], 2112))], 4);
                                 var r
-                            }), 128))], 42, on)) : (0, l.Q3)("v-if", !0)], 64)
+                            }), 128))], 42, on)) : n && n._zGroup ? __zGrpRow(n) : (0, l.Q3)("v-if", !0)], 64)
                         }), 128))]), (0, l.Q3)(" Empty State "), Xn.value.length ? (0, l.Q3)("v-if", !0) : ((0, l.uX)(), (0, l.CE)("div", xn, J(t[44] || (t[44] = [(0, l.Lk)("svg", {
                             class: "empty-icon",
                             viewBox: "0 0 24 24"
@@ -6890,7 +7062,7 @@
                                                     class: "banner-title"
                                                 }, [t[13] || (t[13] = (0, l.eW)("MBOM/EBOM Report ", -1)), (0, l.Lk)("span", {
                                                     class: "banner-version"
-                                                }, (0, i.v_)("v1.6.3"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
+                                                }, (0, i.v_)("v1.6.4"))]), p.value && u.value ? ((0, l.uX)(), (0, l.CE)("div", Ot, Mt(t[14] || (t[14] = [(0, l.Lk)("svg", {
                                                     viewBox: "0 0 24 24"
                                                 }, [(0, l.Lk)("path", {
                                                     d: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
